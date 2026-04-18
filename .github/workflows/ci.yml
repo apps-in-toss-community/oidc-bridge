@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
 
       - uses: actions/setup-node@v4
         with:
@@ -35,3 +37,61 @@ jobs:
       - run: pnpm build
 
       - run: pnpm test
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: oidc-bridge:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test /healthz
+        run: |
+          set -euo pipefail
+          # Bind to a random host port so parallel jobs on the same runner
+          # don't collide on 8080.
+          docker run -d --name oidc-bridge-ci -p 127.0.0.1:0:8080 oidc-bridge:ci
+          host_port=$(docker port oidc-bridge-ci 8080/tcp | awk -F: 'NR==1{print $NF}')
+          echo "container bound to host port $host_port"
+          ok=false
+          for _ in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:${host_port}/healthz"; then
+              echo
+              echo "healthz ok"
+              ok=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ok" != "true" ]; then
+            echo "healthz never became healthy" >&2
+            docker logs oidc-bridge-ci >&2 || true
+            exit 1
+          fi
+          # Validate the in-container HEALTHCHECK command also reports healthy,
+          # so a regression in the HEALTHCHECK itself (not just /healthz) fails.
+          for _ in $(seq 1 20); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' oidc-bridge-ci)
+            echo "health status: $status"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "HEALTHCHECK never reported healthy" >&2
+          docker logs oidc-bridge-ci >&2 || true
+          exit 1
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f oidc-bridge-ci || true

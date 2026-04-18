@@ -45,10 +45,34 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build image (no push)
+      - name: Build image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false
+          load: true
+          tags: oidc-bridge:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke-test /healthz
+        run: |
+          docker run -d --name oidc-bridge-ci -p 8080:8080 oidc-bridge:ci
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8080/healthz; then
+              echo "healthz ok"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "healthz never became healthy" >&2
+          docker logs oidc-bridge-ci >&2 || true
+          exit 1
+
+      - name: Container logs (always)
+        if: always()
+        run: docker logs oidc-bridge-ci || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f oidc-bridge-ci || true

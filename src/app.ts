@@ -25,8 +25,11 @@ export function createApp(): Hono {
   app.post('/verify', async (c) => {
     const body = await c.req.json<unknown>().catch(() => null);
 
-    if (!body || typeof body !== 'object') {
-      return c.json({ error: 'invalid_request', error_description: 'body must be JSON' }, 400);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return c.json(
+        { error: 'invalid_request', error_description: 'body must be a JSON object' },
+        400,
+      );
     }
 
     const { authorizationCode, referrer } = body as {

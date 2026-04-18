@@ -1,19 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-# ---------- prod-deps ----------
-# Isolated stage that only depends on the manifest so editing src/ does not
-# invalidate the prod-install layer.
-FROM node:24-alpine AS prod-deps
-
-WORKDIR /app
-
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
-
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
-
-
 # ---------- builder ----------
+# Install full deps once, build with tsdown, then prune to a prod-only tree.
 FROM node:24-alpine AS builder
 
 WORKDIR /app
@@ -27,6 +15,9 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN pnpm build
 
+# Prune to production deps for the runtime stage.
+RUN pnpm prune --prod
+
 
 # ---------- runtime ----------
 FROM node:24-alpine AS runtime
@@ -38,13 +29,17 @@ ENV NODE_ENV=production \
 
 USER node
 
-COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
+COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/package.json ./package.json
 
 EXPOSE 8080
 
+# Uses Node's global fetch (Node 24) instead of relying on busybox wget.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1
+  CMD node -e "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "dist/server.mjs"]
+# `node --init` style signal handling: node as PID 1 is fine for this service,
+# but `--enable-source-maps` keeps stack traces useful without shipping a
+# separate init. Cloud Run delivers SIGTERM directly to PID 1.
+CMD ["node", "--enable-source-maps", "dist/server.mjs"]

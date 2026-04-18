@@ -56,30 +56,28 @@ ghcr.io/apps-in-toss-community/oidc-bridge:latest
 
 ```bash
 docker run --rm -p 8080:8080 \
-  -e TOSS_CLIENT_ID=... \
-  -e TOSS_CLIENT_SECRET=... \
-  -e FIREBASE_SERVICE_ACCOUNT='{"type":"service_account",...}' \
-  -e RATE_LIMIT_ENABLED=false \
   ghcr.io/apps-in-toss-community/oidc-bridge:latest
 ```
 
-`/healthz` → `200 ok`. Service listens on `PORT` (default `8080`, Cloud Run convention).
+`/healthz` → `200 ok`. Service listens on `PORT` (default `8080`, Cloud Run convention). See [Environment](#environment) for the full set of knobs (most are planned and currently ignored — the scaffold only reads `PORT`).
 
 ### Environment
 
-| Var | Required | Purpose |
-|---|---|---|
-| `TOSS_CLIENT_ID` | yes | Toss partner client ID |
-| `TOSS_CLIENT_SECRET` | yes | Toss partner client secret |
-| `TOSS_API_BASE` | no | Override upstream (default `https://apps-in-toss-api.toss.im`) |
-| `FIREBASE_SERVICE_ACCOUNT` | optional | Raw JSON (or base64). Required only for `/firebase-token` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | optional | Alternative: path to the JSON service account |
-| `OIDC_SIGNING_KEY` | optional | PEM-encoded RSA/EC private key, for the OIDC provider surface |
-| `OIDC_ISSUER` | optional | Issuer URL that OIDC consumers will whitelist |
-| `TOSS_PII_DECRYPTION_KEY` | optional | If set, bridge can decrypt Toss `/login-me` PII fields on explicit opt-in |
-| `ALLOWED_ORIGINS` | optional | Comma-separated CORS allow-list |
-| `RATE_LIMIT_ENABLED` | optional | `true` on the public image, defaults `false` for self-host |
-| `PORT` | optional | Default `8080` |
+The current build only reads `PORT`. All other knobs below are **planned**; they are listed here so self-hosters can wire them up ahead of the M1-M4 milestones (see [`TODO.md`](./TODO.md)).
+
+| Var | Required | Status | Purpose |
+|---|---|---|---|
+| `PORT` | no | current | Listen port (default `8080`) |
+| `TOSS_CLIENT_ID` | yes (M1) | planned | Toss partner client ID |
+| `TOSS_CLIENT_SECRET` | yes (M1) | planned | Toss partner client secret |
+| `TOSS_API_BASE` | no | planned | Override upstream (default `https://apps-in-toss-api.toss.im`) |
+| `FIREBASE_SERVICE_ACCOUNT` | optional | planned (M2) | Raw JSON (or base64). Required for `/firebase-token` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | optional | planned (M2) | Alternative: path to the JSON service account |
+| `OIDC_SIGNING_KEY` | optional | planned (M4) | PEM-encoded RSA/EC private key, for the OIDC provider surface |
+| `OIDC_ISSUER` | optional | planned (M4) | Issuer URL that OIDC consumers will whitelist |
+| `TOSS_PII_DECRYPTION_KEY` | optional | planned | If set, bridge can decrypt Toss `/login-me` PII fields on explicit opt-in |
+| `ALLOWED_ORIGINS` | optional | planned (M3) | Comma-separated CORS allow-list |
+| `RATE_LIMIT_ENABLED` | optional | planned (M3) | `true` on the public image, defaults `false` for self-host |
 
 Secrets are never logged. `.env` supported in dev.
 

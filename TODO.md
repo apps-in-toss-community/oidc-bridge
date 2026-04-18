@@ -1,7 +1,7 @@
 # TODO
 
 ## High Priority
-- [ ] Implement real Toss token verification in `POST /verify` (currently returns `501 not_implemented`). Call `/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, decode the returned access-token JWT, and return normalized claims. Resolves the pre-stable gap documented in `CLAUDE.md` § Toss verification.
+- [ ] Implement real Toss token verification in `POST /verify` (currently returns `501 not_implemented`). Call `/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, decode the returned access-token JWT, and return normalized claims. Resolves the pre-stable gap documented in `CLAUDE.md` § Toss verification. **When this lands**: flip README's env table `Required` column for `TOSS_CLIENT_ID`/`TOSS_CLIENT_SECRET` from `— (yes at M1)` to plain `yes`, drop the "current build only reads `PORT`" paragraph, and restore `TOSS_CLIENT_ID`/`TOSS_CLIENT_SECRET` to the README quickstart `docker run`.
 
 ## Medium Priority
 - [ ] M2: `POST /firebase-token` endpoint — wrap `/verify`, call `firebase-admin` `auth().createCustomToken(uid, claims)`. Returns `501 not_configured` when `FIREBASE_SERVICE_ACCOUNT` / `GOOGLE_APPLICATION_CREDENTIALS` is absent. Self-host only in v0; public instance does not hold end-user service accounts.

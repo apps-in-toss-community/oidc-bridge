@@ -61,7 +61,7 @@ jobs:
           # Bind to a random host port so parallel jobs on the same runner
           # don't collide on 8080.
           docker run -d --name oidc-bridge-ci -p 127.0.0.1:0:8080 oidc-bridge:ci
-          host_port=$(docker port oidc-bridge-ci 8080/tcp | head -n1 | awk -F: '{print $NF}')
+          host_port=$(docker port oidc-bridge-ci 8080/tcp | awk -F: 'NR==1{print $NF}')
           echo "container bound to host port $host_port"
           ok=false
           for _ in $(seq 1 20); do
@@ -91,10 +91,6 @@ jobs:
           echo "HEALTHCHECK never reported healthy" >&2
           docker logs oidc-bridge-ci >&2 || true
           exit 1
-
-      - name: Container logs (always)
-        if: always()
-        run: docker logs oidc-bridge-ci || true
 
       - name: Clean up
         if: always()

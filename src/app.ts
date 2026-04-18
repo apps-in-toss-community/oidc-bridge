@@ -27,7 +27,7 @@ export function createApp(): Hono {
    * See CLAUDE.md (API 표면, Toss token verification) for the contract and flow.
    */
   app.post('/verify', async (c) => {
-    const body = await c.req.json<unknown>().catch(() => null);
+    const body: unknown = await c.req.json().catch(() => null);
 
     if (!isJsonObject(body)) {
       return c.json(

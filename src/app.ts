@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import { verifyTossAuthorizationCode } from './toss/verify.js';
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Build the Hono app.
  *
@@ -25,17 +29,14 @@ export function createApp(): Hono {
   app.post('/verify', async (c) => {
     const body = await c.req.json<unknown>().catch(() => null);
 
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    if (!isJsonObject(body)) {
       return c.json(
         { error: 'invalid_request', error_description: 'body must be a JSON object' },
         400,
       );
     }
 
-    const { authorizationCode, referrer } = body as {
-      authorizationCode?: unknown;
-      referrer?: unknown;
-    };
+    const { authorizationCode, referrer } = body;
 
     if (typeof authorizationCode !== 'string' || authorizationCode.length === 0) {
       return c.json(

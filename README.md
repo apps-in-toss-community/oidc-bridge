@@ -65,19 +65,21 @@ docker run --rm -p 8080:8080 \
 
 The current build only reads `PORT`. All other knobs below are **planned**; they are listed here so self-hosters can wire them up ahead of the M1-M4 milestones (see [`TODO.md`](./TODO.md)).
 
+The `Required` column reflects the **current** build — today only `PORT` is read. Milestone tags (`M1`, `M2`, ...) indicate when each knob becomes active.
+
 | Var | Required | Status | Purpose |
 |---|---|---|---|
-| `PORT` | no | current | Listen port (default `8080`) |
-| `TOSS_CLIENT_ID` | yes (M1) | planned | Toss partner client ID |
-| `TOSS_CLIENT_SECRET` | yes (M1) | planned | Toss partner client secret |
-| `TOSS_API_BASE` | no | planned | Override upstream (default `https://apps-in-toss-api.toss.im`) |
-| `FIREBASE_SERVICE_ACCOUNT` | optional | planned (M2) | Raw JSON (or base64). Required for `/firebase-token` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | optional | planned (M2) | Alternative: path to the JSON service account |
-| `OIDC_SIGNING_KEY` | optional | planned (M4) | PEM-encoded RSA/EC private key, for the OIDC provider surface |
-| `OIDC_ISSUER` | optional | planned (M4) | Issuer URL that OIDC consumers will whitelist |
-| `TOSS_PII_DECRYPTION_KEY` | optional | planned | If set, bridge can decrypt Toss `/login-me` PII fields on explicit opt-in |
-| `ALLOWED_ORIGINS` | optional | planned (M3) | Comma-separated CORS allow-list |
-| `RATE_LIMIT_ENABLED` | optional | planned (M3) | `true` on the public image, defaults `false` for self-host |
+| `PORT` | — | current | Listen port (default `8080`) |
+| `TOSS_CLIENT_ID` | — (yes at M1) | planned | Toss partner client ID |
+| `TOSS_CLIENT_SECRET` | — (yes at M1) | planned | Toss partner client secret |
+| `TOSS_API_BASE` | — | planned | Override upstream (default `https://apps-in-toss-api.toss.im`) |
+| `FIREBASE_SERVICE_ACCOUNT` | — | planned (M2) | Raw JSON (or base64). Will be required for `/firebase-token` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | — | planned (M2) | Alternative: path to the JSON service account |
+| `OIDC_SIGNING_KEY` | — | planned (M4) | PEM-encoded RSA/EC private key, for the OIDC provider surface |
+| `OIDC_ISSUER` | — | planned (M4) | Issuer URL that OIDC consumers will whitelist |
+| `TOSS_PII_DECRYPTION_KEY` | — | planned | If set, bridge can decrypt Toss `/login-me` PII fields on explicit opt-in |
+| `ALLOWED_ORIGINS` | — | planned (M3) | Comma-separated CORS allow-list |
+| `RATE_LIMIT_ENABLED` | — | planned (M3) | `true` on the public image, defaults `false` for self-host |
 
 Secrets are never logged. `.env` supported in dev.
 

@@ -57,15 +57,38 @@ jobs:
 
       - name: Smoke-test /healthz
         run: |
-          docker run -d --name oidc-bridge-ci -p 8080:8080 oidc-bridge:ci
-          for i in {1..20}; do
-            if curl -fsS http://127.0.0.1:8080/healthz; then
+          set -euo pipefail
+          # Bind to a random host port so parallel jobs on the same runner
+          # don't collide on 8080.
+          docker run -d --name oidc-bridge-ci -p 127.0.0.1:0:8080 oidc-bridge:ci
+          host_port=$(docker port oidc-bridge-ci 8080/tcp | head -n1 | awk -F: '{print $NF}')
+          echo "container bound to host port $host_port"
+          ok=false
+          for _ in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:${host_port}/healthz"; then
+              echo
               echo "healthz ok"
-              exit 0
+              ok=true
+              break
             fi
             sleep 1
           done
-          echo "healthz never became healthy" >&2
+          if [ "$ok" != "true" ]; then
+            echo "healthz never became healthy" >&2
+            docker logs oidc-bridge-ci >&2 || true
+            exit 1
+          fi
+          # Validate the in-container HEALTHCHECK command also reports healthy,
+          # so a regression in the HEALTHCHECK itself (not just /healthz) fails.
+          for _ in $(seq 1 20); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' oidc-bridge-ci)
+            echo "health status: $status"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "HEALTHCHECK never reported healthy" >&2
           docker logs oidc-bridge-ci >&2 || true
           exit 1
 

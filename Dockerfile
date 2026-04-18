@@ -39,7 +39,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# `node --init` style signal handling: node as PID 1 is fine for this service,
-# but `--enable-source-maps` keeps stack traces useful without shipping a
-# separate init. Cloud Run delivers SIGTERM directly to PID 1.
+# Node as PID 1 is fine for this stateless service — Cloud Run delivers
+# SIGTERM directly to PID 1 and @hono/node-server handles it. No `tini`
+# needed. `--enable-source-maps` keeps stack traces readable in logs.
 CMD ["node", "--enable-source-maps", "dist/server.mjs"]

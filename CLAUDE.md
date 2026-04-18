@@ -31,8 +31,37 @@
 
 보안이 민감한 production 사용자는 self-host를 권장.
 
+한국 리전이 있는 호스팅이 요구사항이며, 공용 인스턴스는 **Google Cloud Run (`asia-northeast3`, Seoul)** 기반이 1순위 후보 (scale-to-zero + Docker 이미지 네이티브 + free tier 내 운영 가능).
+
+## 기술 스택
+
+- **TypeScript** (ESM only, strict)
+- **tsdown** — 빌드
+- **vitest** — 테스트
+- **pnpm** — 패키지 매니저 (10.33.0)
+- **Biome** — lint + formatter (조직 표준)
+- **Changesets 사용 안 함** — Type C (서비스 repo). `main` = 배포. Docker 이미지 tag가 버전 역할.
+
+## 명령어
+
+```bash
+pnpm build       # tsdown
+pnpm start       # node dist/server.mjs
+pnpm dev         # watch
+pnpm typecheck   # tsc --noEmit
+pnpm test        # vitest run
+pnpm lint        # biome check .
+pnpm lint:fix    # biome check --write .
+pnpm format      # biome format --write .
+```
+
+## 배포 모델
+
+- **공용 인스턴스**: main push → Docker 이미지 빌드 → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>` → Cloud Run 자동 배포 (향후 설정)
+- **Self-host**: 사용자가 동일 Docker 이미지를 자신의 인프라(Docker/Fly.io/Cloud Run/k8s)에 올림. `RATE_LIMIT_ENABLED=false` 기본값.
+
 ## Status
 
-placeholder 상태. 구현 전.
+scaffold 완료, 구현 전. `src/server.ts`는 placeholder.
 
 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.

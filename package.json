@@ -1,0 +1,43 @@
+{
+  "name": "@ait-co/oidc-bridge",
+  "version": "0.0.0",
+  "description": "OIDC + Firebase Custom Token bridge for Toss login — community-run with public rate-limited instance, plus self-host Docker image",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsdown src/server.ts --format esm",
+    "start": "node dist/server.mjs",
+    "dev": "tsdown src/server.ts --format esm --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.12",
+    "tsdown": "^0.21.7",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  },
+  "keywords": [
+    "apps-in-toss",
+    "toss",
+    "oidc",
+    "firebase",
+    "auth",
+    "bridge"
+  ],
+  "packageManager": "pnpm@10.33.0",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apps-in-toss-community/oidc-bridge"
+  },
+  "bugs": {
+    "url": "https://github.com/apps-in-toss-community/oidc-bridge/issues"
+  }
+}

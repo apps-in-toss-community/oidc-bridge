@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+
+.claude/settings.local.json
+.claude/*.lock
+.claude.lock
+
+.DS_Store
+*.log

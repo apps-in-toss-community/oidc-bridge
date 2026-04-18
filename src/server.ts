@@ -6,5 +6,5 @@ const app = createApp();
 
 serve({ fetch: app.fetch, port }, (info) => {
   // Intentionally minimal — structured logging comes in a follow-up PR.
-  console.log(`oidc-bridge listening on http://0.0.0.0:${info.port}`);
+  console.log(`oidc-bridge listening on http://localhost:${info.port}`);
 });

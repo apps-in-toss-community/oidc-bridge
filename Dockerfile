@@ -1,25 +1,31 @@
 # syntax=docker/dockerfile:1.7
 
+# ---------- prod-deps ----------
+# Isolated stage that only depends on the manifest so editing src/ does not
+# invalidate the prod-install layer.
+FROM node:24-alpine AS prod-deps
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+
+
 # ---------- builder ----------
 FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Pin pnpm to the org-standard version via corepack.
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
-# Install deps against the lockfile only (better cache hits).
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-# Build.
-COPY tsconfig.json biome.json ./
+COPY tsconfig.json ./
 COPY src ./src
 RUN pnpm build
-
-# Produce a production-only node_modules in a second step so the runtime
-# stage doesn't ship devDependencies.
-RUN pnpm install --frozen-lockfile --prod
 
 
 # ---------- runtime ----------
@@ -30,13 +36,15 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080
 
-# Non-root user (node:24-alpine already ships `node` uid 1000).
 USER node
 
-COPY --chown=node:node --from=builder /app/node_modules ./node_modules
+COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/package.json ./package.json
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1 || exit 1
 
 CMD ["node", "dist/server.mjs"]

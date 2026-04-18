@@ -11,6 +11,6 @@ coverage
 .env
 .env.*
 !.env.example
-PLAN.md
 README.md
+TODO.md
 CLAUDE.md

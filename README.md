@@ -98,7 +98,7 @@ See [`TODO.md`](./TODO.md) for the remaining implementation work.
 
 ### `POST /verify` (shape)
 
-Request:
+Request — both fields required; `referrer` must be `"DEFAULT"` or `"SANDBOX"`:
 
 ```json
 { "authorizationCode": "auth_xxx", "referrer": "DEFAULT" }
@@ -123,4 +123,4 @@ BSD-3-Clause.
 
 ## Status
 
-See the [organization landing page](https://apps-in-toss-community.github.io/) for the full roadmap.
+Pre-stable scaffold: `POST /verify` is a 501 stub, `/firebase-token` and the OIDC provider surface are planned. See [`TODO.md`](./TODO.md) for the remaining work and [`CLAUDE.md`](./CLAUDE.md) § 마일스톤 for the repo-level milestone view. The [organization landing page](https://apps-in-toss-community.github.io/) has the cross-repo roadmap.

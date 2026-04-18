@@ -20,10 +20,10 @@ export function createApp(): Hono {
    * normalized claims. Every higher-level endpoint (e.g. /firebase-token)
    * wraps this path.
    *
-   * See PLAN.md §3.1 for the full contract and §4 for the verification flow.
+   * See CLAUDE.md (API 표면, Toss token verification) for the contract and flow.
    */
   app.post('/verify', async (c) => {
-    const body = await c.req.json().catch(() => null);
+    const body = await c.req.json<unknown>().catch(() => null);
 
     if (!body || typeof body !== 'object') {
       return c.json({ error: 'invalid_request', error_description: 'body must be JSON' }, 400);

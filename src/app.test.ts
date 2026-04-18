@@ -34,6 +34,15 @@ describe('POST /verify', () => {
     expect(await res.json()).toMatchObject({ error: 'invalid_request' });
   });
 
+  it('rejects missing referrer', async () => {
+    const res = await post({ authorizationCode: 'auth_xxx' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: 'invalid_request',
+      error_description: expect.stringContaining('referrer'),
+    });
+  });
+
   it('rejects empty authorizationCode', async () => {
     const res = await post({ authorizationCode: '', referrer: 'DEFAULT' });
     expect(res.status).toBe(400);

@@ -56,23 +56,23 @@ ghcr.io/apps-in-toss-community/oidc-bridge:latest
 
 ```bash
 docker run --rm -p 8080:8080 \
+  -e TOSS_CLIENT_ID=your-client-id \
+  -e TOSS_CLIENT_SECRET=your-client-secret \
   ghcr.io/apps-in-toss-community/oidc-bridge:latest
 ```
 
-`/healthz` → `200 ok`. Service listens on `PORT` (default `8080`, Cloud Run convention). See [Environment](#environment) for the full set of knobs (most are planned and currently ignored — the scaffold only reads `PORT`).
+`/healthz` → `200 ok`. Service listens on `PORT` (default `8080`, Cloud Run convention). See [Environment](#environment) for the full set of knobs.
 
 ### Environment
 
-The current build only reads `PORT`. All other knobs below are **planned**; they are listed here so self-hosters can wire them up ahead of the M1-M4 milestones (see [`TODO.md`](./TODO.md)).
-
-The `Required` column reflects the **current** build — today only `PORT` is read. Milestone tags (`M1`, `M2`, ...) indicate when each knob becomes active.
+`POST /verify` is wired up against Toss's partner API. The other rows below are **planned** for later milestones (see [`TODO.md`](./TODO.md)); milestone tags (`M2`, `M3`, ...) indicate when each becomes active.
 
 | Var | Required | Status | Purpose |
 |---|---|---|---|
 | `PORT` | — | current | Listen port (default `8080`) |
-| `TOSS_CLIENT_ID` | — (yes at M1) | planned | Toss partner client ID |
-| `TOSS_CLIENT_SECRET` | — (yes at M1) | planned | Toss partner client secret |
-| `TOSS_API_BASE` | — | planned | Override upstream (default `https://apps-in-toss-api.toss.im`) |
+| `TOSS_CLIENT_ID` | yes | current | Toss partner client ID (sent as HTTP Basic Auth username to `/oauth2/generate-token`) |
+| `TOSS_CLIENT_SECRET` | yes | current | Toss partner client secret (Basic Auth password) |
+| `TOSS_API_BASE` | — | current | Override upstream (default `https://apps-in-toss-api.toss.im`) |
 | `FIREBASE_SERVICE_ACCOUNT` | — | planned (M2) | Raw JSON (or base64). Will be required for `/firebase-token` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | — | planned (M2) | Alternative: path to the JSON service account |
 | `OIDC_SIGNING_KEY` | — | planned (M4) | PEM-encoded RSA/EC private key, for the OIDC provider surface |
@@ -87,7 +87,7 @@ Secrets are never logged. `.env` supported in dev.
 
 | Endpoint | Status |
 |---|---|
-| `POST /verify` | **current** — returns `501 not_implemented` until real Toss token verification lands |
+| `POST /verify` | **current** — calls Toss `/oauth2/generate-token` and returns normalized claims |
 | `POST /firebase-token` | planned (self-host; requires Firebase service account) |
 | `GET /.well-known/openid-configuration` | planned |
 | `GET /.well-known/jwks.json` | planned |
@@ -104,7 +104,7 @@ Request — both fields required; `referrer` must be `"DEFAULT"` or `"SANDBOX"`:
 { "authorizationCode": "auth_xxx", "referrer": "DEFAULT" }
 ```
 
-Response (once implemented):
+Response:
 
 ```json
 {
@@ -115,7 +115,9 @@ Response (once implemented):
 }
 ```
 
-Errors follow OAuth 2.0 / OIDC conventions: `{ "error": "...", "error_description": "..." }` with `400 invalid_request`, `401 invalid_code`, `429 rate_limited`, `502 upstream_error`.
+Errors follow OAuth 2.0 / OIDC conventions: `{ "error": "...", "error_description": "..." }` with `400 invalid_request`, `401 invalid_code`, `500 server_misconfigured` (env vars missing), `502 upstream_error` / `502 invalid_upstream_response`. `429 rate_limited` lands with the M3 rate-limit middleware.
+
+> v0 decodes the Toss `accessToken` but does **not** cryptographically verify its signature — the `/oauth2/generate-token` call itself is the verification signal. This is a documented pre-stable gap; signature verification lands once Toss clarifies the JWKS / shared-secret path. See [`CLAUDE.md`](./CLAUDE.md) § Toss verification.
 
 ## License
 
@@ -123,4 +125,4 @@ BSD-3-Clause.
 
 ## Status
 
-Pre-stable scaffold: `POST /verify` is a 501 stub, `/firebase-token` and the OIDC provider surface are planned. See [`TODO.md`](./TODO.md) for the remaining work and [`CLAUDE.md`](./CLAUDE.md) § 마일스톤 for the repo-level milestone view. The [organization landing page](https://apps-in-toss-community.github.io/) has the cross-repo roadmap.
+Pre-stable: `POST /verify` is live against Toss's partner API (without AT signature verification — see API section). `/firebase-token` and the OIDC provider surface are planned. See [`TODO.md`](./TODO.md) for the remaining work and [`CLAUDE.md`](./CLAUDE.md) § 마일스톤 for the repo-level milestone view. The [organization landing page](https://apps-in-toss-community.github.io/) has the cross-repo roadmap.

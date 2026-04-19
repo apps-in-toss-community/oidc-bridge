@@ -75,17 +75,20 @@
 4. Bridge는 `refreshToken`을 기본적으로 호출자에 **전달하지 않음**. stateless verify 경로에 쓸 데가 없고 노출하면 blast radius만 커짐.
 5. (옵션, 요청별 플래그) `/oauth2/login-me`로 `userKey`, `scope`, `agreedTerms` 조회. PII 필드는 AES-256-GCM 암호화되어 옴 — § PII 참고.
 
+### 결정됨 (M1)
+
+1. **partner API 인증 스킴** — **HTTP Basic Auth** (`TOSS_CLIENT_ID:TOSS_CLIENT_SECRET` base64). 문서가 불명확해 가장 흔한 partner OAuth 관례를 택했다. production에서 Toss가 다른 스킴(`X-Client-Id`/`X-Client-Secret` 헤더 등)을 요구한다고 확인되면 `src/toss/verify.ts`의 `basicAuthHeader` 경로만 교체하면 된다. 단일 변경 지점.
+
 ### Open questions
 
-1. **partner API 인증 스킴** — `generate-token` 요청 auth가 Basic auth인지, `X-Client-Id`/`X-Client-Secret` 헤더인지, 또는 body에 `client_id`/`client_secret`인지. 문서 확인 또는 동작하는 샘플로 검증 필요. 가정: 도입 초기엔 header 방식, PR로 확정.
-2. **AT 서명 검증 경로** — 후보 (가능성 순): (a) Toss가 JWKS URL을 퍼블리시 → fetch + cache. (b) partner `client_secret` 기반 HS256 shared secret. (c) 퍼블릭 JWKS 없고 AT는 opaque → `/login-me` 왕복이 사실상 검증.
-3. **`/login-me`는 매 verify 필수인가 opt-in인가** — 현재 계획 opt-in. 다만 `sub` 안정성이 `/login-me`의 `userKey`에 의존하면 mandatory로 강제될 수 있음.
-4. **공용 인스턴스 OIDC signing key 회전 주기** — 90일? 설정 가능? v0에선 수동 회전 + 공지.
-5. **partner 사전 등록 없이 per-partner rate bucket을 제공할지** — v0는 "no". per-IP만.
+1. **AT 서명 검증 경로** — 후보 (가능성 순): (a) Toss가 JWKS URL을 퍼블리시 → fetch + cache. (b) partner `client_secret` 기반 HS256 shared secret. (c) 퍼블릭 JWKS 없고 AT는 opaque → `/login-me` 왕복이 사실상 검증. V0는 decode만, 서명 검증 없이 `generate-token` 응답을 신뢰 (pre-stable gap, 아래 참고).
+2. **`/login-me`는 매 verify 필수인가 opt-in인가** — 현재 계획 opt-in. 다만 `sub` 안정성이 `/login-me`의 `userKey`에 의존하면 mandatory로 강제될 수 있음. V0 `sub`는 AT의 `sub` claim을 그대로 사용.
+3. **공용 인스턴스 OIDC signing key 회전 주기** — 90일? 설정 가능? v0에선 수동 회전 + 공지.
+4. **partner 사전 등록 없이 per-partner rate bucket을 제공할지** — v0는 "no". per-IP만.
 
 ### 스캐폴드 초기의 가정 (pre-stable gap)
 
-V0 `/verify`는 실제 구현되면 `generate-token` 응답을 **단일 검증 신호**로 신뢰하고 AT claim은 decode만 하되 암호학적 서명 검증은 하지 않는다. 이는 pre-stable 갭으로 명시하며, 후속 PR(M1)에서 닫는다. `/verify` 응답에 이 사실이 드러나게 해 consumer가 알 수 있도록.
+V0 `/verify`는 `generate-token` 응답을 **단일 검증 신호**로 신뢰하고 AT claim은 decode만 하되 암호학적 서명 검증은 하지 않는다. 이는 pre-stable 갭으로 명시하며, open question #1이 해소되면 후속 PR에서 닫는다. README API 섹션에서도 이를 드러내 consumer가 알 수 있도록 했다.
 
 ### Claim 매핑
 
@@ -202,8 +205,8 @@ pnpm format      # biome format --write .
 
 | # | 내용 | 상태 |
 |---|---|---|
-| M0 | Hono scaffold + `/verify` 스텁 + Dockerfile + CI green | **완료 (현재 PR)** |
-| M1 | 실제 `/verify` 구현 (Toss `generate-token`), JWT 서명 검증 경로 확정 | next |
+| M0 | Hono scaffold + `/verify` 스텁 + Dockerfile + CI green | 완료 |
+| M1 | 실제 `/verify` 구현 (Toss `generate-token`, Basic Auth). JWT 서명 검증 경로 확정은 follow-up | **부분 완료 (현재 PR)** — 서명 검증만 남음 |
 | M2 | `/firebase-token` + Firebase Admin (self-host) | next |
 | M3 | Rate-limit 미들웨어 + CORS + payload cap | next |
 | M4 | OIDC provider surface (`/authorize`, `/token`, JWKS) | follow-on |
@@ -212,6 +215,6 @@ pnpm format      # biome format --write .
 
 ## Status
 
-scaffold 완료, 구현 전. `src/server.ts`는 placeholder.
+`POST /verify` 가동 (Toss `generate-token` 연동, Basic Auth, JWT payload decode). AT 서명 검증과 `/firebase-token`, OIDC provider surface, rate-limit은 follow-up.
 
 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.

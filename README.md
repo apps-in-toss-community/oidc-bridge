@@ -115,7 +115,7 @@ Response:
 }
 ```
 
-Errors follow OAuth 2.0 / OIDC conventions: `{ "error": "...", "error_description": "..." }` with `400 invalid_request`, `401 invalid_code`, `500 server_misconfigured` (env vars missing), `502 upstream_error` / `502 invalid_upstream_response`. `429 rate_limited` lands with the M3 rate-limit middleware.
+Errors follow OAuth 2.0 / OIDC conventions: `{ "error": "...", "error_description": "..." }` with `400 invalid_request`, `401 toss_rejected`, `500 server_misconfigured` (env vars missing), `502 upstream_error` / `502 invalid_upstream_response`. `429 rate_limited` lands with the M3 rate-limit middleware.
 
 > v0 decodes the Toss `accessToken` but does **not** cryptographically verify its signature — the `/oauth2/generate-token` call itself is the verification signal. This is a documented pre-stable gap; signature verification lands once Toss clarifies the JWKS / shared-secret path. See [`CLAUDE.md`](./CLAUDE.md) § Toss verification.
 

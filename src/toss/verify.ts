@@ -32,7 +32,7 @@ export interface VerifiedClaims {
 }
 
 export type VerifyErrorCode =
-  | 'invalid_code'
+  | 'toss_rejected'
   | 'upstream_error'
   | 'server_misconfigured'
   | 'invalid_upstream_response';
@@ -74,23 +74,13 @@ interface DecodedAccessToken {
   userKey?: string;
 }
 
-/**
- * Decode a JWT's payload without verifying the signature.
- *
- * Pre-stable: Toss has not (publicly) documented a JWKS endpoint or shared-
- * secret scheme for partner access tokens. We trust `generate-token` as the
- * verification signal and decode the AT only to read claims. Follow-up PR
- * will add signature verification when Toss clarifies the path.
- */
 function decodeJwtPayload(jwt: string): DecodedAccessToken | null {
   const parts = jwt.split('.');
   if (parts.length !== 3) return null;
   const payload = parts[1];
   if (!payload) return null;
   try {
-    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-    const json = Buffer.from(padded, 'base64').toString('utf8');
+    const json = Buffer.from(payload, 'base64url').toString('utf8');
     const parsed: unknown = JSON.parse(json);
     if (!isObject(parsed)) return null;
     const out: DecodedAccessToken = {};
@@ -140,6 +130,7 @@ export async function verifyTossAuthorizationCode(req: VerifyRequest): Promise<V
       }),
     });
   } catch (_err) {
+    // TODO(M3-observability): surface network-error details via structured logger.
     return {
       ok: false,
       status: 502,
@@ -148,11 +139,15 @@ export async function verifyTossAuthorizationCode(req: VerifyRequest): Promise<V
     };
   }
 
-  if (response.status === 400 || response.status === 401 || response.status === 403) {
+  // 400/401 → the user's authorizationCode itself was bad. 403 stays out of
+  // this arm on purpose: Toss returning 403 usually signals a partner-creds
+  // issue (server misconfiguration), not a per-user bad code, so we fall
+  // through to upstream_error rather than masking it as invalid_code.
+  if (response.status === 400 || response.status === 401) {
     return {
       ok: false,
       status: 401,
-      error: 'invalid_code',
+      error: 'toss_rejected',
       description: 'Toss rejected the authorizationCode.',
     };
   }
@@ -208,6 +203,10 @@ export async function verifyTossAuthorizationCode(req: VerifyRequest): Promise<V
   if (decoded.userKey) claims.userKey = decoded.userKey;
   if (scopes && scopes.length > 0) claims.scopes = scopes;
 
+  // Trust boundary: `decoded.sub` is read from a JWT whose signature we do not
+  // verify in v0 — see CLAUDE.md § pre-stable gap. Do not extend this function
+  // to grant additional authority based on AT claims until signature
+  // verification lands (see TODO.md High Priority).
   const verified: VerifiedClaims = {
     sub: decoded.sub,
     provider: 'toss',

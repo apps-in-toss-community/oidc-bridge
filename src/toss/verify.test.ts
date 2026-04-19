@@ -35,6 +35,7 @@ describe('verifyTossAuthorizationCode', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     if (originalClientId === undefined) delete process.env.TOSS_CLIENT_ID;
     else process.env.TOSS_CLIENT_ID = originalClientId;
     if (originalSecret === undefined) delete process.env.TOSS_CLIENT_SECRET;
@@ -102,7 +103,7 @@ describe('verifyTossAuthorizationCode', () => {
     });
   });
 
-  it('maps Toss 401 to invalid_code', async () => {
+  it('maps Toss 401 to toss_rejected', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(401, { error: 'invalid_grant' })),
@@ -111,7 +112,19 @@ describe('verifyTossAuthorizationCode', () => {
       authorizationCode: 'bad',
       referrer: 'DEFAULT',
     });
-    expect(result).toMatchObject({ ok: false, status: 401, error: 'invalid_code' });
+    expect(result).toMatchObject({ ok: false, status: 401, error: 'toss_rejected' });
+  });
+
+  it('maps Toss 403 to upstream_error (treated as partner-creds issue, not a bad code)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(403, { error: 'forbidden' })),
+    );
+    const result = await verifyTossAuthorizationCode({
+      authorizationCode: 'auth_xxx',
+      referrer: 'DEFAULT',
+    });
+    expect(result).toMatchObject({ ok: false, status: 502, error: 'upstream_error' });
   });
 
   it('maps Toss 5xx to upstream_error', async () => {

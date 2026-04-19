@@ -92,7 +92,7 @@ describe('POST /verify', () => {
     );
     const res = await post(validBody);
     expect(res.status).toBe(401);
-    expect(await res.json()).toMatchObject({ error: 'invalid_code' });
+    expect(await res.json()).toMatchObject({ error: 'toss_rejected' });
   });
 
   it('returns verified claims on success', async () => {

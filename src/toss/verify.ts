@@ -142,7 +142,7 @@ export async function verifyTossAuthorizationCode(req: VerifyRequest): Promise<V
   // 400/401 → the user's authorizationCode itself was bad. 403 stays out of
   // this arm on purpose: Toss returning 403 usually signals a partner-creds
   // issue (server misconfiguration), not a per-user bad code, so we fall
-  // through to upstream_error rather than masking it as invalid_code.
+  // through to upstream_error rather than masking it as toss_rejected.
   if (response.status === 400 || response.status === 401) {
     return {
       ok: false,

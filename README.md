@@ -119,6 +119,20 @@ Errors follow OAuth 2.0 / OIDC conventions: `{ "error": "...", "error_descriptio
 
 > v0 decodes the Toss `accessToken` but does **not** cryptographically verify its signature — the `/oauth2/generate-token` call itself is the verification signal. This is a documented pre-stable gap; signature verification lands once Toss clarifies the JWKS / shared-secret path. See [`CLAUDE.md`](./CLAUDE.md) § Toss verification.
 
+## Development
+
+### Pre-commit hook
+
+Optional but recommended. After cloning, activate the standard pre-commit hook (runs `biome check` on staged files):
+
+```sh
+git config core.hooksPath .githooks
+```
+
+This is a developer convenience for fast feedback before push. CI runs the same checks as the enforcement layer, so contributors who don't activate the hook will still see lint failures in their PR.
+
+선택 사항이지만 권장합니다. clone 후 표준 pre-commit hook을 활성화하면 staged 파일에 대해 `biome check`가 자동 실행됩니다 (위 명령어). CI가 동일 검사를 실제 강제 계층으로 돌리므로, hook을 활성화하지 않아도 PR에서 lint 실패는 그대로 드러납니다.
+
 ## License
 
 BSD-3-Clause.

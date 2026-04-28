@@ -18,6 +18,9 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "style": {
+        "noNonNullAssertion": "off"
+      },
       "suspicious": {
         "noExplicitAny": "error"
       }

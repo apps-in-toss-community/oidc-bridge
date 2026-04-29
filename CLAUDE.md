@@ -26,8 +26,8 @@
 
 ### 운영 모델
 
-- **공용 인스턴스** (rate-limited, best-effort, SLA 없음) — Google Cloud Run `asia-northeast3` (Seoul). scale-to-zero + Docker 이미지 네이티브 + free tier 내 운영 가능해서 1순위.
-- **Self-host** (Docker/Fly.io/Cloud Run/k8s) — 동일 Docker 이미지. `RATE_LIMIT_ENABLED=false` 기본.
+- **공용 인스턴스** (rate-limited, best-effort, SLA 없음) — **Vultr Cloud Compute, Seoul (ICN) 리전**, 단일 VPS + Docker + Caddy(자동 HTTPS). 한국 리전 + IO-bound 워크로드 + ~$6/mo + self-hoster가 그대로 docker compose로 복제 가능해서 1순위.
+- **Self-host** (Docker/Fly.io/k8s/임의 Docker host) — 동일 Docker 이미지 + 동일 `docker-compose.yml`. `RATE_LIMIT_ENABLED=false` 기본.
 
 보안이 민감한 production 사용자는 self-host를 권장.
 
@@ -37,7 +37,7 @@
 
 - **DB 없음, Redis 없음, 세션 스토어 없음.** 각 요청: Toss `authorizationCode` in → verified claims / token out. 요청 간 서버 상태 없음.
 - Rate-limit 카운터만 **in-memory per-instance** (§ rate-limit 전략 참고). 공용 인스턴스의 "best-effort" 약속에 비추면 충분. 전역 rate-limit이 필요한 self-host는 앞단에 API gateway를 두라.
-- 배포 산출물은 **단일 Docker 이미지** (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` (default `8080`, Cloud Run 규약), `/healthz` → `200 ok`.
+- 배포 산출물은 **단일 Docker 이미지** (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` (default `8080`), `/healthz` → `200 ok`. 공용 인스턴스는 이 이미지를 Vultr VPS 위에서 docker-compose로 띄우고 Caddy가 TLS 종단을 담당한다.
 
 ### `/verify`는 foundational primitive
 
@@ -47,8 +47,8 @@
 
 **Hono** 선택. 이유:
 
-- **Runtime-agnostic** (Node, Bun, Deno, Cloud Run, Cloudflare Workers, Vercel). 공용 인스턴스는 Cloud Run `asia-northeast3`로 가고, self-hoster는 자기가 쓰는 무엇이든 올리고 싶어할 것.
-- **작은 표면 + 빠른 cold-start** — Cloud Run scale-to-zero에 유의미.
+- **Runtime-agnostic** (Node, Bun, Deno, Cloudflare Workers, Vercel 등). 공용 인스턴스는 Vultr Seoul VPS의 Node 24 위에서 돌리지만, self-hoster는 자기가 쓰는 무엇이든 올리고 싶어할 것.
+- **작은 표면 + 빠른 cold-start** — VPS 재시작/배포 간 다운타임을 줄이는 데 유의미.
 - **CORS / rate-limit / JWT verify 미들웨어 제공**.
 - `@hono/node-server`로 Node 24(조직 스택) 위에서 바로 돌리되, Workers 배포 옵션은 미래에도 열려있음.
 
@@ -110,7 +110,7 @@ PII 필드(name/phone/birthday/CI/gender/nationality)는 기본적으로 `claims
 - **전략**: per-IP sliding-window 카운터, in-memory per instance.
 - **기본값**: `/verify` family 60 req/min/IP. `/firebase-token`은 `/verify`를 감싸므로 같은 버킷.
 - **per-partner (client_id) 제한**은 follow-up — partner 등록 UX가 필요한데 아직 없음. v0는 per-IP만.
-- **Cloud Run 동작**: scale-to-zero 시 카운터 리셋 → best-effort 전제상 수용. multi-instance 시 유효 제한 = `limit × instance_count`. 문서에 명시.
+- **VPS 동작**: 컨테이너 재시작 시 카운터 리셋 → best-effort 전제상 수용. multi-instance scale-out 시 유효 제한 = `limit × instance_count`. 문서에 명시.
 - **헤더**: 모든 응답에 `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. 429엔 `Retry-After` 추가.
 - **Self-host opt-out**: `RATE_LIMIT_ENABLED=false` (공용 Docker 이미지 default `true`, dev default `false`).
 
@@ -197,7 +197,7 @@ pnpm format      # biome format --write .
 
 - **Type C (서비스 repo).** main push = 배포.
 - **Changesets 사용 안 함.** 버전 개념 없음. Docker 이미지 tag가 버전 역할.
-- **공용 인스턴스**: main push → Docker 이미지 빌드 → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>` → Cloud Run 자동 배포 (M5 workflow에서).
+- **공용 인스턴스**: main push → Docker 이미지 빌드 → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>` → SSH로 Vultr Seoul VPS에 접속해 `docker compose pull && up -d` (`.github/workflows/deploy.yml`). 상세 셋업은 [`docs/DEPLOY.md`](./docs/DEPLOY.md).
 - **Self-host**: 사용자가 동일 이미지를 자기 인프라에. `RATE_LIMIT_ENABLED=false` 기본.
 - 의미 있는 마일스톤은 GitHub Release를 수동으로 남겨 self-host 사용자가 구독/핀할 수 있게.
 
@@ -210,7 +210,7 @@ pnpm format      # biome format --write .
 | M2 | `/firebase-token` + Firebase Admin (self-host) | next |
 | M3 | Rate-limit 미들웨어 + CORS + payload cap | next |
 | M4 | OIDC provider surface (`/authorize`, `/token`, JWKS) | follow-on |
-| M5 | 공용 인스턴스용 Cloud Run 배포 workflow | follow-on |
+| M5 | 공용 인스턴스용 Vultr Seoul 배포 workflow (docker-compose + Caddy + GHCR + SSH deploy) | 인프라 코드 완료, Dave 수동 셋업 대기 |
 | M6 | `sdk-example` auth 데모를 공용 인스턴스에 연결 | M4 이후 |
 
 ## Status

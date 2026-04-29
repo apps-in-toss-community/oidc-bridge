@@ -14,3 +14,7 @@ coverage
 README.md
 TODO.md
 CLAUDE.md
+docs
+
+docker-compose.yml
+Caddyfile

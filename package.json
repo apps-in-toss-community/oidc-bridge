@@ -19,10 +19,14 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
-    "hono": "^4.6.12"
+    "bcryptjs": "^2.4.3",
+    "commander": "^12.1.0",
+    "hono": "^4.6.12",
+    "jose": "^5.10.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.12",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25.6.0",
     "tsdown": "^0.21.7",
     "typescript": "^6.0.2",
@@ -44,5 +48,8 @@
   },
   "bugs": {
     "url": "https://github.com/apps-in-toss-community/oidc-bridge/issues"
+  },
+  "optionalDependencies": {
+    "@google-cloud/secret-manager": "^5.6.0"
   }
 }

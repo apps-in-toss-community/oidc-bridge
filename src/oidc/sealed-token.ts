@@ -56,8 +56,8 @@ export function unsealAccessToken(args: {
   const wire = Buffer.from(args.token.slice(TOKEN_PREFIX.length), 'base64url');
   if (wire.length < 3 + NONCE_BYTES + TAG_BYTES) throw new Error('sealed token truncated');
   if (wire[0] !== VERSION_BYTE) throw new Error(`sealed token wire version ${wire[0]}`);
-  const sealingKeyVersion = wire[1];
-  const idLen = wire[2];
+  const sealingKeyVersion = wire[1] as number;
+  const idLen = wire[2] as number;
   const headerLen = 3 + idLen;
   if (wire.length < headerLen + NONCE_BYTES + TAG_BYTES) throw new Error('sealed token truncated');
   const tenantId = wire.subarray(3, headerLen).toString('utf8');

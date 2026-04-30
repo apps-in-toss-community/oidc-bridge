@@ -38,6 +38,11 @@ describe('adminAuth', () => {
     expect(res.status).toBe(401);
   });
 
+  it('returns 401 when Bearer scheme has empty token', async () => {
+    const res = await buildApp().request('/probe', { headers: { authorization: 'Bearer   ' } });
+    expect(res.status).toBe(401);
+  });
+
   it('passes through to next handler when token matches', async () => {
     const res = await buildApp().request('/probe', {
       headers: { authorization: 'Bearer correct-token' },

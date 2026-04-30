@@ -136,7 +136,34 @@ operators can run their own.
   user can run their own bridge for $0 and call `/firebase-token` directly
   from the mini-app.
 
-### 3.3 Out of scope (deferred)
+### 3.3 In scope (M5 — public-instance launch + sdk-example dog-fooding)
+
+The public instance does not "go live" until the bridge has at least one
+real consumer end-to-end. That consumer is **`sdk-example` itself**: we
+register it as the founding tenant on the public instance and rebuild
+its `AuthPage` to sign a real user into Supabase via our `/oidc/token`.
+This is the primary quality gate for M1 — if the team that built the
+bridge can't wire up Supabase + Toss login through it in a single
+afternoon, no external operator will either.
+
+- Cloud Run deploy workflow + DNS to `oidc-bridge.aitc.dev` + first
+  tenant provisioned via the bundled CLI against the public instance.
+- `sdk-example` switches its `AuthPage`'s OIDC bridge demo from the
+  legacy `POST /verify` shape to a Supabase Edge Function
+  (`supabase/functions/toss-login`) that calls `POST /oidc/token` with
+  `client_secret_basic` and returns the `id_token` to the SPA, which then
+  calls `supabase.auth.signInWithIdToken({ provider, token })`.
+- The Edge Function source becomes the canonical "Supabase + Toss login"
+  reference snippet for the bridge README and for `agent-plugin`'s
+  `/ait new` template.
+- sdk-example's hosting moves from GitHub Pages to a host with serverless
+  functions (Cloudflare Pages or Vercel) so the Edge Function can run
+  alongside the SPA. Static SPA build remains identical.
+- A small "demo data" RLS policy in Supabase auto-deletes user rows after
+  14 days; no PII columns. README documents that the demo Supabase
+  project is not a production trust boundary.
+
+### 3.4 Out of scope (deferred)
 
 - `/oidc/authorize` redirect flow. Toss SDK does not support `redirect_uri`
   or `state`, so a fully-automated OIDC-consumer redirect path is not
@@ -181,11 +208,13 @@ operators can run their own.
 
 #### Supabase Edge Function
 
+This snippet is the canonical Supabase reference and lives at
+`sdk-example/supabase/functions/toss-login/index.ts` once M5 lands. It
+runs unchanged on Deno Deploy; the bridge does not require any
+Supabase-specific shim.
+
 ```ts
 // edge function: toss-login
-import { createClient } from "@supabase/supabase-js";
-const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-
 Deno.serve(async (req) => {
   const { authorizationCode } = await req.json();
   const r = await fetch("https://oidc-bridge.aitc.dev/oidc/token", {
@@ -203,7 +232,9 @@ Deno.serve(async (req) => {
 });
 ```
 
-Mini-app uses `supabase.auth.signInWithIdToken({ provider: "oidc", token })`.
+The SPA then calls `supabase.auth.signInWithIdToken({ provider: "oidc",
+token: id_token })`. `client_secret` lives only in the Edge Function's
+environment; it is never shipped to the browser.
 
 #### Firebase Blaze + Identity Platform
 
@@ -461,10 +492,16 @@ flagged migration:
 - `/verify` is removed. Self-host operators get `MIGRATION.md` covering
   the move from `TOSS_CLIENT_ID/SECRET` env vars to CLI-driven tenant
   create + `/oidc/token`. The old envs are dropped in the same release.
-- Public instance (`oidc-bridge.aitc.dev`) goes live only after
-  `/admin/tenants` is gated behind `ADMIN_TOKEN`, the master sealing key
-  is provisioned in GCPSM, and the CLI ships a working `tenant create`
-  against the deployed instance.
+- Public instance (`oidc-bridge.aitc.dev`) goes live only after **all**
+  of the following pass (M5 launch gate):
+  1. `/admin/tenants` is gated behind `ADMIN_TOKEN`.
+  2. Master sealing key is provisioned in GCPSM.
+  3. CLI ships a working `tenant create` against the deployed instance.
+  4. **sdk-example dog-fooding succeeds end-to-end**: a real `appLogin()`
+     in sdk-example completes a Supabase `signInWithIdToken` round-trip
+     via the public bridge, with the `id_token` validated by Supabase
+     against our published JWKS. If this fails, the bridge isn't ready —
+     no external operator will have a smoother time than we do.
 - Cloud Run revision is rolled with `--no-traffic` first, smoke-tested
   via the CLI, then promoted to 100%. Roll-back is a `gcloud run
   services update-traffic` to the prior revision; tenant data lives in

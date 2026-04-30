@@ -8,10 +8,10 @@
 
 ## 짝 repo
 
-- **`sdk-example`** (downstream consumer) — oidc-bridge가 완성되면 sdk-example의 auth 섹션이 실제 토스 로그인 → Supabase/Firebase 세션까지의 **E2E 흐름을 데모**한다. 이게 bridge의 주요 품질 게이트.
+- **`sdk-example`** (downstream consumer + dog-fooding 타겟) — bridge M5 launch gate는 "sdk-example이 공용 bridge로 실제 Supabase 세션을 만들어내는 E2E 성공". sdk-example의 `AuthPage`가 옛 `POST /verify` 호출을 버리고 **Supabase Edge Function (`supabase/functions/toss-login`)**을 통해 `/oidc/token` → `signInWithIdToken` 경로로 재구축된다. 이 Edge Function의 소스 자체가 bridge README와 `agent-plugin` `/ait new` 템플릿의 canonical reference 코드.
 - **`agent-plugin`** — `/ait new`에서 auth 옵션으로 Supabase/Firebase/Auth0를 선택하면 이 bridge를 가리키는 설정을 템플릿에 주입.
 
-기본적으로 **독립 서비스**. 다른 repo 변경 없이 배포 가능.
+기본적으로 **독립 서비스**. 다른 repo 변경 없이 배포 가능 — 하지만 launch는 sdk-example의 dog-fooding 성공에 묶여 있다.
 
 ## 프로젝트 개요
 
@@ -274,8 +274,8 @@ pnpm format      # biome format --write .
 | M2 | `/firebase-token` (self-host) + `firebase-admin` lazy init | next |
 | M3 | Rate-limit + CORS + payload cap + 구조화 로깅 | next |
 | M4 | (Optional) 헬퍼 mini-app 기반 `/authorize` redirect 흐름 | follow-on, demand 봐서 |
-| M5 | Vultr Seoul 배포 workflow (docker-compose + Caddy + GHCR + SSH deploy) + 공용 인스턴스 launch (founding tenant 등록 + sdk-example dog-fooding) | 인프라 코드 완료, Dave 수동 셋업 + M1 완료 후 launch |
-| M6 | `sdk-example` auth 데모를 공용 인스턴스에 연결 (M5의 dog-fooding 결과) | M5 이후 |
+| **M5** | **공용 인스턴스 launch** — Vultr Seoul 배포 workflow (docker-compose + Caddy + GHCR + SSH deploy, 인프라 코드 완료) + DNS (`oidc-bridge.aitc.dev`) + founding tenant 등록 + **sdk-example dog-fooding** (Supabase Edge Function으로 `AuthPage` 재구축, 공용 bridge로 실제 Supabase 세션 E2E). dog-fooding 성공이 launch gate. | M1 완료 후 launch |
+| M6 | `sdk-example` auth 데모를 공용 인스턴스에 연결 (M5 dog-fooding 결과의 polish + 추가 IdP 시나리오) | M5 이후 |
 
 상세 M1 설계는 [`docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md`](docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md). M1은 breaking change — 기존 `/verify`는 같은 릴리즈에서 제거되고 self-host 운영자에게는 `MIGRATION.md`가 제공된다.
 

@@ -23,6 +23,9 @@ importers:
       jose:
         specifier: ^5.10.0
         version: 5.10.0
+      undici:
+        specifier: ^6.25.0
+        version: 6.25.0
     devDependencies:
       '@biomejs/biome':
         specifier: 2.4.12
@@ -1082,6 +1085,10 @@ packages:
 
   undici-types@7.19.2:
     resolution: {integrity: sha512-qYVnV5OEm2AW8cJMCpdV20CDyaN3g0AjDlOGf1OW4iaDEx8MwdtChUp4zu4H0VP3nDRF/8RKWH+IPp9uW0YGZg==}
+
+  undici@6.25.0:
+    resolution: {integrity: sha512-ZgpWDC5gmNiuY9CnLVXEH8rl50xhRCuLNA97fAUnKi8RRuV4E6KG31pDTsLVUKnohJE0I3XDrTeEydAXRw47xg==}
+    engines: {node: '>=18.17'}
 
   unrun@0.2.36:
     resolution: {integrity: sha512-ICAGv44LHSKjCdI4B4rk99lJLHXBweutO4MUwu3cavMlYtXID0Tn5e1Kwe/Uj6BSAuHHXfi1JheFVCYhcXHfAg==}
@@ -2244,6 +2251,8 @@ snapshots:
       quansync: 1.0.0
 
   undici-types@7.19.2: {}
+
+  undici@6.25.0: {}
 
   unrun@0.2.36:
     dependencies:

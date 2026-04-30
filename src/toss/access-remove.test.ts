@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { accessRemove } from './access-remove.js';
+import { removeByAccessToken } from './access-remove.js';
 import { buildAgent } from './client.js';
 
 const certPem = readFileSync('src/__fixtures__/test-mtls.cert.pem', 'utf8');
@@ -19,7 +19,7 @@ const failBody = {
   },
 };
 
-describe('accessRemove', () => {
+describe('removeByAccessToken', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('returns ok:true on success', async () => {
@@ -34,10 +34,10 @@ describe('accessRemove', () => {
       ),
     );
     const agent = buildAgent({ cert_pem: certPem, key_pem: keyPem });
-    const result = await accessRemove({
+    const result = await removeByAccessToken({
       apiBase: 'https://apps-in-toss-api.toss.im',
       agent,
-      accessToken: 'valid-at',
+      tossAccessToken: 'valid-at',
     });
     expect(result.ok).toBe(true);
   });
@@ -54,10 +54,10 @@ describe('accessRemove', () => {
       ),
     );
     const agent = buildAgent({ cert_pem: certPem, key_pem: keyPem });
-    const result = await accessRemove({
+    const result = await removeByAccessToken({
       apiBase: 'https://apps-in-toss-api.toss.im',
       agent,
-      accessToken: 'unknown-at',
+      tossAccessToken: 'unknown-at',
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -78,10 +78,10 @@ describe('accessRemove', () => {
       }),
     );
     const agent = buildAgent({ cert_pem: certPem, key_pem: keyPem });
-    await accessRemove({
+    await removeByAccessToken({
       apiBase: 'https://apps-in-toss-api.toss.im',
       agent,
-      accessToken: 'my-at',
+      tossAccessToken: 'my-at',
     });
     expect(capturedBody).toEqual({ accessToken: 'my-at' });
   });

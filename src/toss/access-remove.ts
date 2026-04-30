@@ -8,15 +8,15 @@ export interface AccessRemoveSuccess {
   removed: boolean;
 }
 
-export async function accessRemove(args: {
+export async function removeByAccessToken(args: {
   apiBase: string;
   agent: Agent;
-  accessToken: string;
+  tossAccessToken: string;
 }): Promise<ParsedEnvelope<AccessRemoveSuccess>> {
   const raw = await tossFetch({
     url: `${args.apiBase}${PATH}`,
     method: 'POST',
-    body: { accessToken: args.accessToken },
+    body: { accessToken: args.tossAccessToken },
     agent: args.agent,
   });
   return parseTossEnvelope<AccessRemoveSuccess>(raw);

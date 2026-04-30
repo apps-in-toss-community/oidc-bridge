@@ -8,12 +8,12 @@ const PATH = '/api-partner/v1/apps-in-toss/user/oauth2/login-me';
 export async function loginMe(args: {
   apiBase: string;
   agent: Agent;
-  accessToken: string;
+  tossAccessToken: string;
 }): Promise<ParsedEnvelope<LoginMeSuccess>> {
   const raw = await tossFetch({
     url: `${args.apiBase}${PATH}`,
     method: 'GET',
-    bearer: args.accessToken,
+    bearer: args.tossAccessToken,
     agent: args.agent,
   });
   return parseTossEnvelope<LoginMeSuccess>(raw);

@@ -28,7 +28,7 @@ describe('loginMe', () => {
     const result = await loginMe({
       apiBase: 'https://apps-in-toss-api.toss.im',
       agent,
-      accessToken: 'test-access-token',
+      tossAccessToken: 'test-access-token',
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -51,7 +51,7 @@ describe('loginMe', () => {
     const result = await loginMe({
       apiBase: 'https://apps-in-toss-api.toss.im',
       agent,
-      accessToken: 'expired-token',
+      tossAccessToken: 'expired-token',
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -77,7 +77,7 @@ describe('loginMe', () => {
     await loginMe({
       apiBase: 'https://apps-in-toss-api.toss.im',
       agent,
-      accessToken: 'my-token',
+      tossAccessToken: 'my-token',
     });
     expect(capturedMethod).toBe('GET');
     expect(capturedAuth).toBe('Bearer my-token');

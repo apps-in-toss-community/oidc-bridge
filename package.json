@@ -7,10 +7,13 @@
   "engines": {
     "node": ">=24"
   },
+  "bin": {
+    "oidc-bridge": "dist/cli.mjs"
+  },
   "scripts": {
-    "build": "tsdown src/server.ts --format esm",
+    "build": "tsdown",
     "start": "node dist/server.mjs",
-    "dev": "tsdown src/server.ts --format esm --watch",
+    "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "biome check .",

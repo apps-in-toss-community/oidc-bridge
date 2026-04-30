@@ -8,7 +8,7 @@ const keyPem = readFileSync('src/__fixtures__/test-mtls.key.pem', 'utf8');
 
 const successBody = {
   resultType: 'SUCCESS',
-  success: { removed: true },
+  success: {},
 };
 
 const failBody = {

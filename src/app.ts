@@ -1,4 +1,9 @@
 import { Hono } from 'hono';
+import type { Config } from './config.js';
+import { mountRevoke } from './oidc/revoke.js';
+import { mountToken } from './oidc/token.js';
+import { mountUserinfo } from './oidc/userinfo.js';
+import type { TenantStore } from './tenants/store.js';
 import { verifyTossAuthorizationCode } from './toss/verify.js';
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -8,11 +13,14 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 /**
  * Build the Hono app.
  *
- * Kept as a factory (rather than a module-level singleton) so tests can
- * construct fresh instances with injected dependencies, and so the server
- * bootstrap (`server.ts`) stays a thin entrypoint.
+ * When called with `{ config, store }`, mounts the M1 OIDC routes
+ * (POST /oidc/token, GET /oidc/userinfo, POST /oidc/revoke) in addition
+ * to the legacy /verify and /healthz endpoints.
+ *
+ * When called without arguments, returns only the legacy surface — used by
+ * the existing app.test.ts suite until Task 7 extends the factory.
  */
-export function createApp(): Hono {
+export async function createApp(args?: { config: Config; store: TenantStore }): Promise<Hono> {
   const app = new Hono();
 
   app.get('/healthz', (c) => c.json({ status: 'ok' }));
@@ -20,11 +28,8 @@ export function createApp(): Hono {
   /**
    * POST /verify
    *
-   * Foundational endpoint: takes a Toss `authorizationCode` and returns
-   * normalized claims. Every higher-level endpoint (e.g. /firebase-token)
-   * wraps this path.
-   *
-   * See CLAUDE.md (API 표면, Toss token verification) for the contract and flow.
+   * Legacy endpoint (M0.5). Will be removed in the same release as M1.
+   * See CLAUDE.md for migration notes.
    */
   app.post('/verify', async (c) => {
     const body: unknown = await c.req.json().catch(() => null);
@@ -66,6 +71,12 @@ export function createApp(): Hono {
 
     return c.json(result.claims);
   });
+
+  if (args !== undefined) {
+    mountToken(app, args.config, args.store);
+    mountUserinfo(app, args.config, args.store);
+    mountRevoke(app, args.config, args.store);
+  }
 
   return app;
 }

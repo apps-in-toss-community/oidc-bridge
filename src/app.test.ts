@@ -3,7 +3,7 @@ import { createApp } from './app.js';
 
 describe('GET /healthz', () => {
   it('returns ok', async () => {
-    const app = createApp();
+    const app = await createApp();
     const res = await app.request('/healthz');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: 'ok' });
@@ -29,7 +29,7 @@ describe('POST /verify', () => {
   });
 
   async function post(body: unknown): Promise<Response> {
-    const app = createApp();
+    const app = await createApp();
     return app.request('/verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

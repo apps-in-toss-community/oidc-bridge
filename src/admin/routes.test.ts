@@ -226,6 +226,42 @@ describe('/admin/tenants CRUD', () => {
         body: JSON.stringify({ name: 'x' }),
       });
       expect(res.status).toBe(404);
+      const body = await jsonAs<ErrorResponse>(res);
+      expect(body).toMatchObject({ error: 'not_found' });
+    });
+
+    it('rejects half-pair cert update (cert_pem only) with 400', async () => {
+      const { app, store } = await setup();
+      const created = await store.create({
+        name: 'half',
+        environment: 'sandbox',
+        cert_pem: certPem,
+        key_pem: keyPem,
+      });
+      const res = await app.request(`/admin/tenants/${created.tenant.id}`, {
+        method: 'PATCH',
+        headers: { ...authHeader, 'content-type': 'application/json' },
+        body: JSON.stringify({ cert_pem: 'something-new' }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'invalid_request' });
+    });
+
+    it('rejects half-pair cert update (key_pem only) with 400', async () => {
+      const { app, store } = await setup();
+      const created = await store.create({
+        name: 'half',
+        environment: 'sandbox',
+        cert_pem: certPem,
+        key_pem: keyPem,
+      });
+      const res = await app.request(`/admin/tenants/${created.tenant.id}`, {
+        method: 'PATCH',
+        headers: { ...authHeader, 'content-type': 'application/json' },
+        body: JSON.stringify({ key_pem: 'something-new' }),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'invalid_request' });
     });
   });
 
@@ -247,6 +283,15 @@ describe('/admin/tenants CRUD', () => {
       const getRes = await app.request(`/admin/tenants/${client_id}`, { headers: authHeader });
       expect(getRes.status).toBe(404);
     });
+
+    it('is idempotent (returns 204 even for unknown ids)', async () => {
+      const { app } = await setup();
+      const res = await app.request('/admin/tenants/tnt_doesnotexistxxxxxxxxxx', {
+        method: 'DELETE',
+        headers: authHeader,
+      });
+      expect(res.status).toBe(204);
+    });
   });
 
   describe('POST /admin/tenants/:id/secrets/rotate', () => {
@@ -267,6 +312,17 @@ describe('/admin/tenants CRUD', () => {
       expect(typeof body.client_secret).toBe('string');
       expect(body.client_secret.length).toBeGreaterThan(0);
       expect(body.client_secret).not.toBe(originalSecret);
+    });
+
+    it('returns 404 for unknown tenant', async () => {
+      const { app } = await setup();
+      const res = await app.request('/admin/tenants/tnt_nonexistent12345678901234/secrets/rotate', {
+        method: 'POST',
+        headers: authHeader,
+      });
+      expect(res.status).toBe(404);
+      const body = await jsonAs<ErrorResponse>(res);
+      expect(body).toMatchObject({ error: 'not_found' });
     });
   });
 });

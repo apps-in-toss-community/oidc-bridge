@@ -2,6 +2,13 @@ import type { Config } from '../config.js';
 import { createFsStore } from './fs-store.js';
 import type { TenantCreateInput, TenantPatch, TenantPublic, TenantRecord } from './types.js';
 
+export class TenantNotFoundError extends Error {
+  constructor(public tenantId: string) {
+    super(`tenant ${tenantId} not found`);
+    this.name = 'TenantNotFoundError';
+  }
+}
+
 export interface CreatedTenant {
   tenant: TenantRecord;
   client_secret: string; // plaintext, returned once

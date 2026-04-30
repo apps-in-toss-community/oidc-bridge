@@ -19,6 +19,7 @@ import {
   TENANT_ID_PATTERN,
 } from './record.js';
 import type { CreatedTenant, RotatedSecret, TenantStore } from './store.js';
+import { TenantNotFoundError } from './store.js';
 import {
   CURRENT_SCHEMA_VERSION,
   type TenantCreateInput,
@@ -129,7 +130,7 @@ export async function createFsStore(dataDir: string): Promise<TenantStore> {
 
   async function update(id: string, patch: TenantPatch): Promise<TenantRecord> {
     const current = await get(id);
-    if (!current) throw new Error(`tenant ${id} not found`);
+    if (!current) throw new TenantNotFoundError(id);
     const next = applyPatch(current, patch);
     await atomicWriteJson(tenantPath(dataDir, id), next);
     return next;
@@ -137,7 +138,7 @@ export async function createFsStore(dataDir: string): Promise<TenantStore> {
 
   async function rotateSecret(id: string): Promise<RotatedSecret> {
     const current = await get(id);
-    if (!current) throw new Error(`tenant ${id} not found`);
+    if (!current) throw new TenantNotFoundError(id);
     const { record: next, clientSecret: client_secret } = await applyRotation(current);
     await atomicWriteJson(tenantPath(dataDir, id), next);
     return { client_secret };

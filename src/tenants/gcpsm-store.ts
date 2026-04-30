@@ -6,6 +6,7 @@ import {
   TENANT_ID_PATTERN,
 } from './record.js';
 import type { CreatedTenant, RotatedSecret, TenantStore } from './store.js';
+import { TenantNotFoundError } from './store.js';
 import {
   CURRENT_SCHEMA_VERSION,
   type TenantCreateInput,
@@ -90,7 +91,7 @@ export async function createGcpsmStore(projectId: string): Promise<TenantStore> 
 
   async function update(id: string, patch: TenantPatch): Promise<TenantRecord> {
     const current = await get(id);
-    if (!current) throw new Error(`tenant ${id} not found`);
+    if (!current) throw new TenantNotFoundError(id);
     const next = applyPatch(current, patch);
     await writeSecret(id, next, false);
     return next;
@@ -98,7 +99,7 @@ export async function createGcpsmStore(projectId: string): Promise<TenantStore> 
 
   async function rotateSecret(id: string): Promise<RotatedSecret> {
     const current = await get(id);
-    if (!current) throw new Error(`tenant ${id} not found`);
+    if (!current) throw new TenantNotFoundError(id);
     const { record: next, clientSecret: client_secret } = await applyRotation(current);
     await writeSecret(id, next, false);
     return { client_secret };

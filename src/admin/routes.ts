@@ -1,15 +1,9 @@
 import { Hono } from 'hono';
 import type { TenantStore } from '../tenants/store.js';
+import { TenantNotFoundError } from '../tenants/store.js';
 import type { TenantRecord } from '../tenants/types.js';
 import { isObject } from '../utils/json.js';
 import { adminAuth } from './auth.js';
-
-interface TenantBodyShape {
-  name?: unknown;
-  environment?: unknown;
-  cert_pem?: unknown;
-  key_pem?: unknown;
-}
 
 function publicView(t: TenantRecord) {
   return {
@@ -33,20 +27,19 @@ export function buildAdminRouter(store: TenantStore, adminToken: string): Hono {
   r.post('/tenants', async (c) => {
     const raw: unknown = await c.req.json().catch(() => ({}));
     if (!isObject(raw)) return c.json({ error: 'invalid_request' }, 400);
-    const body = raw as TenantBodyShape;
     if (
-      typeof body.name !== 'string' ||
-      (body.environment !== 'production' && body.environment !== 'sandbox') ||
-      typeof body.cert_pem !== 'string' ||
-      typeof body.key_pem !== 'string'
+      typeof raw.name !== 'string' ||
+      (raw.environment !== 'production' && raw.environment !== 'sandbox') ||
+      typeof raw.cert_pem !== 'string' ||
+      typeof raw.key_pem !== 'string'
     ) {
       return c.json({ error: 'invalid_request' }, 400);
     }
     const created = await store.create({
-      name: body.name,
-      environment: body.environment,
-      cert_pem: body.cert_pem,
-      key_pem: body.key_pem,
+      name: raw.name,
+      environment: raw.environment,
+      cert_pem: raw.cert_pem,
+      key_pem: raw.key_pem,
     });
     return c.json(
       {
@@ -65,22 +58,29 @@ export function buildAdminRouter(store: TenantStore, adminToken: string): Hono {
   });
 
   r.patch('/tenants/:id', async (c) => {
+    const id = c.req.param('id');
     const raw: unknown = await c.req.json().catch(() => ({}));
     if (!isObject(raw)) return c.json({ error: 'invalid_request' }, 400);
-    const body = raw as TenantBodyShape;
-    const patch: Parameters<TenantStore['update']>[1] = {};
-    if (typeof body.name === 'string') patch.name = body.name;
-    if (body.environment === 'production' || body.environment === 'sandbox') {
-      patch.environment = body.environment;
+    // Reject half-pair PEM updates: both cert_pem and key_pem must be supplied together.
+    const hasCert = typeof raw.cert_pem === 'string';
+    const hasKey = typeof raw.key_pem === 'string';
+    if (hasCert !== hasKey) {
+      return c.json({ error: 'invalid_request' }, 400);
     }
-    if (typeof body.cert_pem === 'string') patch.cert_pem = body.cert_pem;
-    if (typeof body.key_pem === 'string') patch.key_pem = body.key_pem;
+    const patch: Parameters<TenantStore['update']>[1] = {};
+    if (typeof raw.name === 'string') patch.name = raw.name;
+    if (raw.environment === 'production' || raw.environment === 'sandbox') {
+      patch.environment = raw.environment;
+    }
+    if (hasCert && hasKey) {
+      patch.cert_pem = raw.cert_pem as string;
+      patch.key_pem = raw.key_pem as string;
+    }
     try {
-      const updated = await store.update(c.req.param('id'), patch);
+      const updated = await store.update(id, patch);
       return c.json(publicView(updated));
     } catch (e) {
-      // store.update throws "tenant <id> not found" on unknown tenant
-      if ((e as Error).message?.toLowerCase().includes('not found')) {
+      if (e instanceof TenantNotFoundError) {
         return c.json({ error: 'not_found' }, 404);
       }
       throw e;
@@ -93,8 +93,16 @@ export function buildAdminRouter(store: TenantStore, adminToken: string): Hono {
   });
 
   r.post('/tenants/:id/secrets/rotate', async (c) => {
-    const { client_secret } = await store.rotateSecret(c.req.param('id'));
-    return c.json({ client_secret });
+    const id = c.req.param('id');
+    try {
+      const { client_secret } = await store.rotateSecret(id);
+      return c.json({ client_secret });
+    } catch (e) {
+      if (e instanceof TenantNotFoundError) {
+        return c.json({ error: 'not_found' }, 404);
+      }
+      throw e;
+    }
   });
 
   return r;

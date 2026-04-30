@@ -65,11 +65,12 @@ docker run --rm -p 8080:8080 \
 
 ### Run with TLS (recommended for any public host)
 
-The repo ships a production [`docker-compose.yml`](./docker-compose.yml) and [`Caddyfile`](./Caddyfile) that pair the bridge with Caddy for automatic Let's Encrypt HTTPS. Reference setup is **Vultr Cloud Compute, Seoul (ICN) region** (~$6/mo) — see [`docs/DEPLOY.md`](./docs/DEPLOY.md) — but the stack runs unchanged on any Docker host.
+The repo ships a production [`docker-compose.yml`](./docker-compose.yml) and [`Caddyfile`](./Caddyfile) that pair the bridge with Caddy for automatic Let's Encrypt HTTPS. Reference setup is **Vultr Cloud Compute, Seoul (ICN) region** (~$5/mo) — see [`docs/DEPLOY.md`](./docs/DEPLOY.md) — but the stack runs unchanged on any Docker host.
 
 ```bash
 cp .env.example .env   # fill in TOSS_CLIENT_ID / TOSS_CLIENT_SECRET / ACME_EMAIL
-# Edit Caddyfile: replace bridge.example.com with your domain.
+# Edit Caddyfile: change oidc-bridge.aitc.dev (the community public instance
+# hostname) to your domain.
 docker compose up -d
 ```
 

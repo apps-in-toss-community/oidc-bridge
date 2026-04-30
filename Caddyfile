@@ -1,14 +1,15 @@
-# Replace bridge.example.com with the domain whose A record points at this
-# host. Caddy will obtain and renew a Let's Encrypt certificate automatically
-# on first request — no manual cert management required. The ACME account
-# email is read from the ACME_EMAIL env var (set in .env).
+# `oidc-bridge.aitc.dev` is the community public instance hostname.
+# Self-hosters: change it to the domain whose A record points at your host.
+# Caddy obtains and renews a Let's Encrypt certificate automatically on the
+# first request — no manual cert management required. The ACME account email
+# is read from the ACME_EMAIL env var (set in .env).
 #
 # `app:8080` resolves over the compose-internal `bridge` network.
 {
 	email {$ACME_EMAIL}
 }
 
-bridge.example.com {
+oidc-bridge.aitc.dev {
 	encode gzip zstd
 
 	# Caddy automatically forwards X-Forwarded-{For,Proto,Host} to the

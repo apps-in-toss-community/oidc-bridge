@@ -66,8 +66,12 @@ operators can run their own.
 - Multi-tenant tenant model. Tenant = (mTLS cert + key, OIDC client_id,
   OIDC client_secret, optional metadata).
 - Tenant store with two backends:
-  - filesystem (self-host default)
-  - Google Secret Manager (public instance default, asia-northeast3)
+  - filesystem (self-host default; also what the public Vultr Seoul VPS uses
+    for v1 — store lives at `${BRIDGE_DATA_DIR}/tenants/*.json` on a Docker
+    volume)
+  - Google Secret Manager (`@google-cloud/secret-manager`, lazy-imported,
+    forward-compat for if/when the public instance moves to Cloud Run or
+    similar)
 - Admin REST API for tenant CRUD: `POST/GET/PATCH/DELETE /admin/tenants`,
   `POST /admin/tenants/:id/secrets/rotate`. Bearer-token-protected with a
   static admin token (`ADMIN_TOKEN` env). Future console SPA layers on top.
@@ -132,9 +136,10 @@ operators can run their own.
   `GOOGLE_APPLICATION_CREDENTIALS`. Returns `501 not_configured` when no
   service account is available; the public instance is therefore a no-op
   here by design.
-- Self-host docs: full Cloud Run free-tier deployment guide so a Spark
-  user can run their own bridge for $0 and call `/firebase-token` directly
-  from the mini-app.
+- Self-host docs: a single-VPS Docker Compose recipe (the same compose +
+  Caddy stack the public instance runs on Vultr Seoul) plus a Cloud Run
+  free-tier alternative, so a Spark user can run their own bridge for ~$0–5/mo
+  and call `/firebase-token` directly from the mini-app.
 
 ### 3.3 In scope (M5 — public-instance launch + sdk-example dog-fooding)
 
@@ -146,8 +151,12 @@ This is the primary quality gate for M1 — if the team that built the
 bridge can't wire up Supabase + Toss login through it in a single
 afternoon, no external operator will either.
 
-- Cloud Run deploy workflow + DNS to `oidc-bridge.aitc.dev` + first
-  tenant provisioned via the bundled CLI against the public instance.
+- Vultr Seoul VPS deploy workflow (already shipped — GitHub Actions builds
+  and pushes `ghcr.io/apps-in-toss-community/oidc-bridge:{latest,sha-<sha>}`,
+  scps `docker-compose.yml` + `Caddyfile` to the VPS, then SSHes
+  `docker compose pull && up -d`; see [`docs/DEPLOY.md`](../../DEPLOY.md)) +
+  DNS to `oidc-bridge.aitc.dev` (live) + first tenant provisioned via the
+  bundled CLI against the public instance.
 - `sdk-example` switches its `AuthPage`'s OIDC bridge demo from the
   legacy `POST /verify` shape to a Supabase Edge Function
   (`supabase/functions/toss-login`) that calls `POST /oidc/token` with
@@ -243,8 +252,9 @@ against our `jwks_uri`. User code is ~10 lines.
 
 #### Firebase Spark (self-host only)
 
-Operator runs the bridge on Cloud Run free tier (or any Docker host) with
-their Firebase service account injected. Mini-app calls `/firebase-token`
+Operator runs the bridge on a single VPS (the public-instance compose
+stack works as-is) or Cloud Run free tier — any Docker host — with their
+Firebase service account injected. Mini-app calls `/firebase-token`
 directly:
 
 ```ts
@@ -414,7 +424,13 @@ ${BRIDGE_DATA_DIR}/                       (mode 0700)
   running bridge process, so the very first tenant exists before the
   bridge boots. The bridge then just reads it on startup.
 
-#### 5.2.4 gcpsm-store layout (public instance default)
+#### 5.2.4 gcpsm-store layout (forward-compat for managed-cloud deploys)
+
+The public instance currently runs on Vultr Seoul VPS with the fs-store
+backend on a Docker volume. The gcpsm-store backend exists for self-hosters
+on GCP and as forward-compat for if/when the public instance migrates to a
+managed-cloud target (e.g., Cloud Run); none of the data layout below is
+on the M5 critical path.
 
 Each persistent artifact is one Secret Manager *secret* (which holds an
 ordered, immutable list of *versions*):
@@ -560,8 +576,10 @@ equivalent. README documents this prominently.
 
 ## 6. Security model
 
-- **Tenant secrets at rest**: GCPSM (public) or filesystem with permission
-  600 (self-host). Never logged.
+- **Tenant secrets at rest**: filesystem with permission 600 on a Docker
+  volume (current public instance + most self-hosters) or GCPSM (managed-cloud
+  self-hosters; forward-compat for any future managed-cloud public deploy).
+  Never logged.
 - **client_secret**: bcrypt hash only. Plaintext shown once at creation
   and rotation. Hash list (not single value) supports zero-downtime
   rotation.
@@ -579,8 +597,8 @@ equivalent. README documents this prominently.
 - **Admin auth**: static bearer token (`ADMIN_TOKEN` env). For public
   instance pre-console, treat as a single-operator secret. Console SPA
   layers per-user OAuth on top later.
-- **Rate limiting**: out of M1 scope (M3) but Cloud Run / Vultr layer can
-  drop early if needed.
+- **Rate limiting**: out of M1 scope (M3) but the Caddy/VPS layer can drop
+  early if needed.
 
 ## 7. Dependencies (new)
 
@@ -633,17 +651,20 @@ flagged migration:
 - Public instance (`oidc-bridge.aitc.dev`) goes live only after **all**
   of the following pass (M5 launch gate):
   1. `/admin/tenants` is gated behind `ADMIN_TOKEN`.
-  2. Master sealing key is provisioned in GCPSM.
+  2. Master sealing key is provisioned on the VPS (`${BRIDGE_DATA_DIR}/keys/master.key`,
+     mode 0600) and `OIDC_MASTER_KEY` is set in `/opt/oidc-bridge/.env`.
   3. CLI ships a working `tenant create` against the deployed instance.
   4. **sdk-example dog-fooding succeeds end-to-end**: a real `appLogin()`
      in sdk-example completes a Supabase `signInWithIdToken` round-trip
      via the public bridge, with the `id_token` validated by Supabase
      against our published JWKS. If this fails, the bridge isn't ready —
      no external operator will have a smoother time than we do.
-- Cloud Run revision is rolled with `--no-traffic` first, smoke-tested
-  via the CLI, then promoted to 100%. Roll-back is a `gcloud run
-  services update-traffic` to the prior revision; tenant data lives in
-  GCPSM independent of the revision.
+- Deploys are `docker compose pull && up -d` over SSH. Roll-back is the
+  same flow with `image: ghcr.io/.../oidc-bridge:sha-<previous>` pinned.
+  Tenant data lives on a Docker volume independent of the image, so an
+  image roll-back doesn't touch tenants. Zero-downtime via blue/green
+  through Caddy upstream pool is in the backlog (current restart-induced
+  2–5s gap is acceptable at zero RPS — see TODO).
 
 ## 10. Open questions
 

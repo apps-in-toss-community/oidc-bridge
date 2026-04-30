@@ -323,34 +323,176 @@ auth, errors) live in their own files.
 ```ts
 interface TenantStore {
   get(tenantId: string): Promise<Tenant | null>;
-  getByClientId(clientId: string): Promise<Tenant | null>;
   list(): Promise<TenantPublic[]>;       // no secrets
   create(input: TenantCreateInput): Promise<{ tenant: Tenant; clientSecret: string }>;
+  update(tenantId: string, patch: TenantPatch): Promise<Tenant>;
   rotateSecret(tenantId: string): Promise<{ clientSecret: string }>;
   delete(tenantId: string): Promise<void>;
 }
+```
 
-interface Tenant {
-  id: string;                            // tnt_<24 base32>
-  name: string;
-  clientId: string;                      // = id, exposed as `client_id`
-  clientSecretHashes: { hash: string; createdAt: number }[];  // bcrypt; array supports rotation overlap
-  mtlsCert: string;                      // PEM, encrypted at rest in GCPSM
-  mtlsKey: string;                       // PEM, encrypted at rest in GCPSM
-  mtlsExpiresAt: number;                 // parsed from cert NotAfter
-  sealingKeyVersion: number;             // for AEAD key derivation
-  createdAt: number;
-  updatedAt: number;
+There is no `getByClientId` because **`client_id` and `tenant_id` are
+the same string** (decision below). Lookups during `/oidc/token` go
+straight to `get(client_id)`.
+
+#### 5.2.1 Identifier model
+
+| Field | Form | Why |
+|---|---|---|
+| `tenant_id` = `client_id` | `tnt_<24 base32 chars>` (Crockford alphabet, `[0-9a-hjkmnp-tv-z]`), generated from 15 bytes of `crypto.randomBytes`. ~120 bits entropy. | Single identifier — no rename hazard, no index. Crockford avoids ambiguous `il/0o/u`. |
+| `client_secret` | 32 bytes from `crypto.randomBytes`, base64url-encoded → 43 chars. Shown once. | High enough entropy that bcrypt cost can stay at 12 (~250 ms). |
+| `mtls_cert_fingerprint` | SHA-256 of DER form, hex. | Logged on tenant create + on each `/oidc/token` for ops correlation; PEM itself never logged. |
+
+Reconsider human-friendly client_ids only when a future console UX needs
+them; v1 stays opaque.
+
+#### 5.2.2 Tenant record schema
+
+The on-disk / on-secret blob is one canonical JSON object regardless of
+backend:
+
+```ts
+// schema_version 1 — bump on incompatible structural changes.
+interface TenantRecord {
+  schema_version: 1;
+  id: string;                       // "tnt_..."
+  name: string;                     // human-readable label, free text
+  environment: "production" | "sandbox";  // routes the Toss `referrer` body field
+  client_secret_hashes: {
+    hash: string;                   // bcrypt, $2b$12$...
+    created_at: number;             // unix seconds
+  }[];                              // array of 1..2 entries during rotation overlap
+  mtls: {
+    cert_pem: string;               // full PEM, including BEGIN/END
+    key_pem: string;                // full PEM
+    cert_fingerprint_sha256: string;// hex, lowercase
+    expires_at: number;             // unix seconds, parsed from cert NotAfter
+  };
+  sealing_key_version: number;      // bumped on master-key rotation
+  created_at: number;
+  updated_at: number;
 }
 ```
 
-`fs-store` writes one JSON file per tenant under `${BRIDGE_DATA_DIR}/tenants/${id}.json`.
-`gcpsm-store` stores the JSON blob as a Secret Manager secret named
-`oidc-bridge-tenant-${id}` and indexes by `clientId` via a labels query
-(or a small `clientId → id` mapping secret).
+Notes:
 
-The master sealing key is in a separate secret (`oidc-bridge-master-key`)
-and never leaves the process memory once loaded.
+- PEMs include literal `\n` characters and the `-----BEGIN/END-----`
+  guards. JSON serialization handles this without modification.
+- The store never stores plaintext `client_secret`. The bcrypt hash list
+  has up to 2 entries: the current secret and the previous one during a
+  72-hour rotation overlap window. `rotate_secret` adds a new entry,
+  prunes anything older than the overlap window, and returns the new
+  plaintext.
+- `TenantPublic` (returned by `list()`) is the same record minus
+  `client_secret_hashes` and `mtls.{cert_pem, key_pem}`. The fingerprint
+  and expiry fields stay so operators can audit.
+
+#### 5.2.3 fs-store layout (self-host default)
+
+```
+${BRIDGE_DATA_DIR}/                       (mode 0700)
+├── tenants/
+│   ├── tnt_01h8….json                    (mode 0600)   atomic write
+│   └── tnt_02j2….json                    (mode 0600)
+├── keys/
+│   ├── master.key                        (mode 0600)   raw 32 bytes (binary)
+│   └── id-token-signing.pem              (mode 0600)   RSA 2048 PEM
+└── .data-version                         "1\n"        (process refuses to start on mismatch)
+```
+
+- **Atomic write**: `fs.writeFile` to a sibling tempfile under
+  `tenants/.tmp-<id>-<rand>` then `fs.rename` over the target. Crash
+  recovery: any leftover `.tmp-*` file on startup is deleted; the real
+  tenant file is the source of truth.
+- **No directory listing during the request path**: `get(tenant_id)` reads
+  one fixed-name file. `list()` reads the directory but is admin-only.
+- **Permissions**: `BRIDGE_DATA_DIR` is created 0700 on first run if it
+  does not exist; the bridge refuses to start if found with broader
+  permissions. Same check on `keys/master.key`.
+- **Self-host bootstrap**: the bundled CLI's `tenant create
+  --offline --data-dir ...` writes directly to this layout without a
+  running bridge process, so the very first tenant exists before the
+  bridge boots. The bridge then just reads it on startup.
+
+#### 5.2.4 gcpsm-store layout (public instance default)
+
+Each persistent artifact is one Secret Manager *secret* (which holds an
+ordered, immutable list of *versions*):
+
+| Purpose | Secret name | Latest-version payload |
+|---|---|---|
+| Tenant record | `oidc-bridge-tenant-${id}` | UTF-8 JSON of `TenantRecord` |
+| Master sealing key | `oidc-bridge-master-key` | 32 raw bytes (`secret_data` is binary) |
+| ID token signing key (active) | `oidc-bridge-signing-key-active` | RSA-2048 PEM |
+| ID token signing key (previous, JWKS overlap) | `oidc-bridge-signing-key-previous` | RSA-2048 PEM, may be absent |
+| Tenant index (deletes only) | `oidc-bridge-tenant-tombstones` | newline-delimited tenant ids |
+
+Resource-level details:
+
+- **Replication**: `automatic` (Google-managed, multi-region). Cost is
+  negligible at our cardinality.
+- **Listing tenants**: `secretmanager.secrets.list` filtered by name
+  prefix `oidc-bridge-tenant-`. The result is paginated; the bridge
+  caches the list for 5 s (admin-side calls only — request path uses
+  `get(tenant_id)` which addresses by name, no list).
+- **Tombstones**: deleting a tenant secret in GCPSM is asynchronous and
+  has a soft-delete window. We append the deleted id to the tombstones
+  secret as a fast path so a stale `list()` page doesn't resurrect a
+  just-deleted tenant in the CLI UI before the deletion materializes.
+- **Versions**: `update()` calls `addSecretVersion` with the new JSON
+  and disables the prior version after success. We never destroy
+  versions automatically; manual destroy is an ops chore for genuinely
+  compromised payloads.
+- **Labels**: each tenant secret carries `app=oidc-bridge`,
+  `tenant_id=<id>` so cost / audit views in GCP can attribute usage. No
+  PII or secret material in labels.
+
+#### 5.2.5 Key material handling
+
+**Master sealing key** (`OIDC_MASTER_KEY` env on self-host /
+`oidc-bridge-master-key` secret in GCPSM):
+
+- 32 raw bytes. Loaded once at process start; held in a `Buffer` that
+  never logs. Rotation requires re-issuing every sealed token, so
+  rotation drains within the refresh-token TTL (Toss RT = 14 days).
+  Rotation procedure: provision a new master key version, bump every
+  tenant's `sealing_key_version`, run both old and new derivations in
+  parallel for 14 days, then drop the old.
+- Per-tenant sealing key = `HKDF-SHA256(master_key, salt =
+  tenant_id, info = "oidc-bridge sealing v" || sealing_key_version, 32
+  bytes)`. The sealing-key derivation is pure (no I/O) so the per-token
+  cost is one HKDF.
+
+**ID token signing key**:
+
+- RSA-2048, generated per deployment and held in PEM form. `jose`'s
+  `importPKCS8` produces the signing key; `exportJWK` of the public
+  half feeds `/.well-known/jwks.json`.
+- Rotation in M1 is manual: provision new active, demote current to
+  previous, publish both in JWKS for 1 hour, then drop previous from
+  JWKS. The previous key stays in storage long enough to satisfy
+  consumers that cache JWKS for up to 24 hours but never signs after
+  demotion.
+- `kid` = SHA-256 of the JWK thumbprint (RFC 7638). Stable across
+  restarts, predictable across nodes if the same PEM is loaded.
+
+#### 5.2.6 Schema migrations
+
+`schema_version` lets us evolve the record without a Big Bang:
+
+- Bridge boot reads each tenant record, checks `schema_version`, and
+  refuses to start if it sees a *higher* version than it knows
+  (forward-incompat protection).
+- Lower versions trigger a one-shot in-place migration on first read,
+  re-saved through the store's atomic write path.
+- The `.data-version` file (fs) and a `oidc-bridge-data-version` secret
+  (gcpsm) gate the bridge process itself: a new bridge image bumps it
+  only after migrating all records, so a rollback to an older image
+  refuses to boot rather than corrupting data.
+
+M1 ships with `schema_version: 1`; the migration framework is in place
+but exercises only on the v1→v1 identity path until a real migration
+needs to land.
 
 ### 5.3 OIDC `/token` flow (authorization_code)
 
@@ -423,15 +565,11 @@ equivalent. README documents this prominently.
 - **client_secret**: bcrypt hash only. Plaintext shown once at creation
   and rotation. Hash list (not single value) supports zero-downtime
   rotation.
-- **Sealing key**: per-tenant key derived via HKDF from a process-wide
-  master key + tenant_id. Master key in env (`OIDC_MASTER_KEY`,
-  base64 32 bytes) for self-host or in GCPSM (`oidc-bridge-master-key`)
-  for public. Rotation requires re-issuing all tokens — accepted, opaque
-  tokens have <= 14-day lifetime so rotation drains within RT TTL.
-- **ID token signing key**: separate from sealing key. RS256 RSA-2048
-  generated per deployment, public half exposed via `/jwks.json`. Rotation
-  not automated in M1; manual cycle with overlap by adding a new key to
-  JWKS, signing with new, then dropping old after RT TTL.
+- **Sealing key** and **ID token signing key**: derivation, storage,
+  and rotation procedure are specified in §5.2.5. Summary: per-tenant
+  AEAD key derived via HKDF from a master key (env or GCPSM); RS256
+  RSA-2048 signing key with `kid` = JWK SHA-256 thumbprint, manual
+  rotation in M1 with active/previous JWKS overlap.
 - **mTLS expiry monitoring**: Bridge surfaces `mtlsExpiresAt` on
   `GET /admin/tenants/:id`. CLI `tenant list` warns at <30 days. Public
   instance emails operator at -30, -7, -1 days (M5; M1 just exposes the
@@ -525,11 +663,6 @@ flagged migration:
   `openid`, we always honor it (we always issue an ID token). Toss-side
   scope is whatever the user agreed to in the mini-app; we never inject
   scopes the mini-app didn't have. Document in README.
-- **Tenant ID = client_id**: do we expose the internal tenant_id as the
-  OIDC client_id, or generate them as separate identifiers? Decision:
-  same value (`tnt_<24 base32>`). Simpler, no rename hazard. Reconsider
-  if the future console wants human-friendly client_ids.
-
 ## 11. Out-of-scope decisions revisited
 
 This spec deletes the previously-tracked TODO item "cryptographic

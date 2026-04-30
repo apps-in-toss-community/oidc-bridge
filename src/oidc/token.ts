@@ -12,6 +12,18 @@ import { extractClientCredentials } from './client-auth.js';
 import { signIdToken } from './id-token.js';
 import { type SealedPayload, sealAccessToken, unsealAccessToken } from './sealed-token.js';
 
+function isObject(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
+// Precomputed bcrypt-cost-12 hash of a random string, used to equalize
+// timing on unknown-tenant lookups. The corresponding plaintext is never
+// recorded. Prevents tenant-id enumeration via response-time analysis
+// (timing oracle): without this, an unknown tenant returns immediately (~ms)
+// while a known tenant + wrong secret runs bcrypt (~50–100ms), making
+// valid tenant IDs detectable by timing.
+const DUMMY_BCRYPT_HASH = '$2a$12$UpGRDA6x73lMTwuXaDLege5m5mQSsVc0HaqaPlObE064uJyI6JLti';
+
 function decodeJwtExp(jwt: string): number | null {
   const parts = jwt.split('.');
   if (parts.length !== 3) return null;
@@ -34,9 +46,11 @@ export function mountToken(app: Hono, config: Config, store: TenantStore): void 
         const text = await c.req.text();
         for (const [k, v] of new URLSearchParams(text)) params[k] = v;
       } else {
-        const j = await c.req.json().catch(() => ({}));
-        for (const [k, v] of Object.entries(j as Record<string, unknown>)) {
-          if (typeof v === 'string') params[k] = v;
+        const j: unknown = await c.req.json().catch(() => ({}));
+        if (isObject(j)) {
+          for (const [k, v] of Object.entries(j)) {
+            if (typeof v === 'string') params[k] = v;
+          }
         }
       }
 
@@ -53,7 +67,12 @@ export function mountToken(app: Hono, config: Config, store: TenantStore): void 
       if (!creds) throw new OAuthError('invalid_client', 'no client authentication', 401);
 
       const tenant = await store.get(creds.client_id);
-      if (!tenant) throw new OAuthError('invalid_client', 'unknown client', 401);
+      if (!tenant) {
+        // Run a dummy bcrypt comparison to equalize timing with the known-tenant
+        // + wrong-secret path, preventing tenant-id enumeration via timing oracle.
+        await verifyClientSecret(creds.client_secret, [DUMMY_BCRYPT_HASH]);
+        throw new OAuthError('invalid_client', 'unknown client', 401);
+      }
       const ok = await verifyClientSecret(
         creds.client_secret,
         tenant.client_secret_hashes.map((h) => h.hash),

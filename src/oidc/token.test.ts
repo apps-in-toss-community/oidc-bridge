@@ -158,6 +158,18 @@ describe('POST /oidc/token — authorization_code', () => {
     expect(await res.json()).toMatchObject({ error: 'invalid_client' });
   });
 
+  it('returns invalid_request on JSON null body (no client auth, no params)', async () => {
+    const { app } = await setupTenant();
+    const res = await app.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'null',
+    });
+    // No client auth → invalid_client (401), not 500.
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ error: 'invalid_client' });
+  });
+
   it('returns invalid_grant when Toss FAILs', async () => {
     const { app, tenantId, clientSecret } = await setupTenant();
     vi.stubGlobal(

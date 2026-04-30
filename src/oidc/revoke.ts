@@ -5,6 +5,10 @@ import { removeByAccessToken } from '../toss/access-remove.js';
 import { buildAgent } from '../toss/client.js';
 import { unsealAccessToken } from './sealed-token.js';
 
+function isObject(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
 /**
  * RFC 7009 §2.2: respond 200 whether revocation succeeded or the token was
  * invalid. We call Toss /access/remove-by-access-token on best effort.
@@ -19,11 +23,14 @@ export function mountRevoke(app: Hono, config: Config, store: TenantStore): void
       const params = new URLSearchParams(text);
       token = params.get('token') ?? undefined;
     } else {
-      const j = (await c.req.json().catch(() => ({}))) as { token?: unknown };
-      if (typeof j.token === 'string') token = j.token;
+      const j: unknown = await c.req.json().catch(() => ({}));
+      if (isObject(j) && typeof j.token === 'string') token = j.token;
     }
     if (!token) return ok();
     try {
+      // M1 ships a single sealing_key_version per tenant. The version is in
+      // the AAD header, so AEAD already enforces version equality. Post-M1
+      // rotation will turn this into a two-attempt unseal (active, then prev).
       const unsealed = unsealAccessToken({
         token,
         masterKey: config.masterKey,

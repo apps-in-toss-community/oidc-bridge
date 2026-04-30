@@ -96,6 +96,16 @@ describe('POST /oidc/revoke (RFC 7009)', () => {
     expect(res.status).toBe(200);
   });
 
+  it('returns 200 on JSON body that is null', async () => {
+    const { app } = await setupTenant();
+    const res = await app.request('/oidc/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'null',
+    });
+    expect(res.status).toBe(200);
+  });
+
   it('returns 200 even when upstream FAILs', async () => {
     const { app, sealedAt } = await setupTenant();
     vi.stubGlobal(

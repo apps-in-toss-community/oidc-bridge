@@ -28,14 +28,13 @@ export async function tossFetch(args: TossFetchArgs): Promise<unknown> {
   }
   if (args.bearer) headers.authorization = `Bearer ${args.bearer}`;
 
+  // biome-ignore lint/suspicious/noExplicitAny: undici dispatcher has a different type shape than the global RequestInit Dispatcher
+  const fetchInit: any = { method: args.method, headers, dispatcher };
+  if (body !== undefined) fetchInit.body = body;
+
   let response: Response;
   try {
-    response = await fetch(args.url, {
-      method: args.method,
-      headers,
-      body,
-      ...({ dispatcher } as { dispatcher: unknown }),
-    });
+    response = await fetch(args.url, fetchInit as RequestInit);
   } catch (_err) {
     throw new OAuthError('temporarily_unavailable', 'failed to reach Toss partner API', 502);
   }

@@ -17,7 +17,7 @@ export function parseTossEnvelope<T>(raw: unknown): ParsedEnvelope<T> {
     const reason = typeof raw.error.reason === 'string' ? raw.error.reason : 'unknown';
     const description =
       typeof raw.error.description === 'string' ? raw.error.description : undefined;
-    return { ok: false, reason, description };
+    return description !== undefined ? { ok: false, reason, description } : { ok: false, reason };
   }
   throw new Error(`unknown resultType ${String(raw.resultType)}`);
 }

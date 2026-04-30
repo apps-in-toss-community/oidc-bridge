@@ -8,40 +8,53 @@
 
 ## 짝 repo
 
-- **`sdk-example`** (downstream consumer) — oidc-bridge가 완성되면 sdk-example의 auth 섹션이 실제 토스 로그인 → Supabase/Firebase 세션까지의 **E2E 흐름을 데모**한다. 이게 bridge의 주요 품질 게이트.
+- **`sdk-example`** (downstream consumer + dog-fooding 타겟) — bridge M5 launch gate는 "sdk-example이 공용 bridge로 실제 Supabase 세션을 만들어내는 E2E 성공". sdk-example의 `AuthPage`가 옛 `POST /verify` 호출을 버리고 **Supabase Edge Function (`supabase/functions/toss-login`)**을 통해 `/oidc/token` → `signInWithIdToken` 경로로 재구축된다. 이 Edge Function의 소스 자체가 bridge README와 `agent-plugin` `/ait new` 템플릿의 canonical reference 코드.
 - **`agent-plugin`** — `/ait new`에서 auth 옵션으로 Supabase/Firebase/Auth0를 선택하면 이 bridge를 가리키는 설정을 템플릿에 주입.
 
-기본적으로 **독립 서비스**. 다른 repo 변경 없이 배포 가능.
+기본적으로 **독립 서비스**. 다른 repo 변경 없이 배포 가능 — 하지만 launch는 sdk-example의 dog-fooding 성공에 묶여 있다.
 
 ## 프로젝트 개요
 
-**oidc-bridge** — 토스 로그인을 **표준 OIDC provider**와 **Firebase Custom Token 발급기**로 중계하는 서버.
+**oidc-bridge** — 토스 로그인을 표준 OIDC 어댑터로 중계해서, mini-app 운영자가 **Supabase / Firebase / Auth0 / Keycloak** 같은 일반 IdP 통합 흐름으로 토스 로그인을 붙일 수 있게 해주는 multi-tenant 서버.
+
+전체 설계는 [`docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md`](docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md). 본 문서는 운영·코딩 컨벤션 요약본이며, 설계와 충돌하면 spec이 source of truth.
 
 ### 왜 필요한가
 
-토스 로그인은 독점 프로토콜이라 Supabase Auth, Firebase Auth, Auth0 같은 표준 IdP에 바로 연결되지 않는다. 이 서버가 중간에서:
+토스는 OIDC IdP가 아니다 — `/authorize`, JWKS, `state`/PKCE 같은 OIDC 프리미티브가 없고, partner API는 mTLS만 받는다. 게다가:
 
-1. **OIDC provider 역할** — `/.well-known/openid-configuration`, `/authorize`, `/token`, JWKS 제공. 표준 OIDC 클라이언트가 바로 붙을 수 있음.
-2. **Firebase Custom Token 발급** — Firebase Admin SDK로 서명된 custom token을 반환. 클라이언트는 `signInWithCustomToken`으로 사용.
+- **Supabase Edge Functions**(Deno Deploy)와 **Firebase Cloud Functions**에서 outbound mTLS는 어렵거나 비포팅.
+- **Firebase Spark** 플랜은 Cloud Functions에서 Google 외부로 나가는 모든 outbound 호출을 막는다. 이게 critical — Spark 사용자에게는 토스 API로 직접 가는 길 자체가 없다.
+
+따라서 bridge는 단순 편의 도구가 아니라 **integration path 그 자체**. mTLS를 종단하고, 표준 OIDC surface를 노출하고, self-host 사용자에게는 Firebase Custom Token도 직접 발급한다.
 
 ### 운영 모델
 
-- **공용 인스턴스** (rate-limited, best-effort, SLA 없음) — **Vultr Cloud Compute, Seoul (ICN) 리전**, 단일 VPS + Docker + Caddy(자동 HTTPS). 한국 리전 + IO-bound 워크로드 + ~$5/mo (`vc2-1c-1gb`) + self-hoster가 그대로 docker compose로 복제 가능해서 1순위.
-- **Self-host** (Docker/Fly.io/k8s/임의 Docker host) — 동일 Docker 이미지 + 동일 `docker-compose.yml`. `RATE_LIMIT_ENABLED=false` 기본.
+- **공용 인스턴스** (`oidc-bridge.aitc.dev`, rate-limited, best-effort, SLA 없음) — **Vultr Cloud Compute, Seoul (ICN) 리전**, 단일 VPS + Docker + Caddy(자동 HTTPS). 한국 리전 + IO-bound 워크로드 + ~$5/mo (`vc2-1c-1gb`) + self-hoster가 그대로 docker compose로 복제 가능해서 1순위.
+- **Self-host** (Docker/Fly.io/k8s/임의 Docker host) — 동일 Docker 이미지 + 동일 `docker-compose.yml`. `RATE_LIMIT_ENABLED=false` 기본. Spark 플랜에서 Firebase Custom Token을 원하면 self-host가 유일한 길.
 
 보안이 민감한 production 사용자는 self-host를 권장.
 
 ## 아키텍처
 
-### Stateless HTTP
+### Multi-tenant + 거의 stateless
 
-- **DB 없음, Redis 없음, 세션 스토어 없음.** 각 요청: Toss `authorizationCode` in → verified claims / token out. 요청 간 서버 상태 없음.
-- Rate-limit 카운터만 **in-memory per-instance** (§ rate-limit 전략 참고). 공용 인스턴스의 "best-effort" 약속에 비추면 충분. 전역 rate-limit이 필요한 self-host는 앞단에 API gateway를 두라.
-- 배포 산출물은 **단일 Docker 이미지** (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` (default `8080`), `/healthz` → `200 ok`. 공용 인스턴스는 이 이미지를 Vultr VPS 위에서 docker-compose로 띄우고 Caddy가 TLS 종단을 담당한다.
+- **Tenant** = (mTLS cert + key, OIDC `client_id`, OIDC `client_secret` hash, 메타데이터). Tenant store만이 유일한 영속 상태.
+- 그 외에는 stateless: 세션 스토어 / DB / Redis 없음. 요청 간 서버 상태 없음.
+- Bridge가 발급하는 access_token은 **sealed wrapper** — `(tenant_id, toss_AT, toss_RT, exp)`을 per-tenant 키로 AEAD(AES-256-GCM) 암호화한 opaque string (`aitc_<base64url>`). 별도 세션 저장소 없이 stateless 유지.
+- Rate-limit 카운터는 in-memory per-instance (M3에서 합류).
+- 배포 산출물: 단일 Docker 이미지 (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` (default `8080`), `/healthz` → `200 ok`. 공용 인스턴스는 이 이미지를 Vultr VPS 위에서 docker-compose로 띄우고 Caddy가 TLS 종단을 담당한다.
 
-### `/verify`는 foundational primitive
+### Tenant store 백엔드
 
-모든 다른 endpoint(`/firebase-token`, OIDC `/token`)가 내부적으로 `verify()`를 재사용한다. "Toss code → verified claims" 한 군데에만 존재한다. 새 endpoint를 추가할 때 이 구조를 깨뜨리지 말 것.
+- **Filesystem** — self-host default. `${BRIDGE_DATA_DIR}/tenants/${id}.json`, perm 600.
+- **Google Secret Manager** — 공용 인스턴스 default. `oidc-bridge-tenant-${id}` secret + clientId 인덱스.
+
+선택은 `TENANT_STORE=fs|gcpsm` env로. GCPSM 백엔드는 lazy import.
+
+### `/oidc/token`이 foundational primitive
+
+모든 데이터 경로(`/oidc/userinfo`, `/oidc/revoke`, M2 `/firebase-token`)가 sealed access_token을 unwrap → tenant lookup → mTLS Toss 호출 한 군데에 수렴한다. 새 endpoint를 추가할 때 이 구조를 깨뜨리지 말 것.
 
 ### Framework: Hono
 
@@ -52,122 +65,171 @@
 - **CORS / rate-limit / JWT verify 미들웨어 제공**.
 - `@hono/node-server`로 Node 24(조직 스택) 위에서 바로 돌리되, Workers 배포 옵션은 미래에도 열려있음.
 
-**Fastify / Express는 거부** — Node에서는 괜찮지만 edge/runtime 이식성이 떨어지고 cold start가 무겁다. Hono는 우리가 신경 쓰는 걸 잃지 않으면서 이식성에서 이김.
+**Fastify / Express는 거부** — Node에서는 괜찮지만 edge/runtime 이식성이 떨어지고 cold start가 무겁다.
 
-### API 표면 (v0)
+### API 표면 (M1 + M2)
 
 모든 응답 JSON. 에러는 OAuth 2.0 / OIDC 관례대로 `{ error, error_description }`.
 
-- `POST /verify` — foundational (현재 `501 not_implemented` 스텁). 요청: `{ authorizationCode, referrer }`. 응답: `{ sub, provider: "toss", claims, tossAccessTokenExpiresAt }`.
-- `POST /firebase-token` — `/verify` 위에 Firebase custom token 서명. `FIREBASE_SERVICE_ACCOUNT` 없으면 `501 not_configured`. 공용 인스턴스는 **end-user service account를 안 들고 있음**. self-host 전용.
-- OIDC provider surface (`/.well-known/openid-configuration`, `/.well-known/jwks.json`, `/authorize`, `/token`, `/userinfo`) — follow-up PR. Supabase / Auth0 / Keycloak가 바닐라 OIDC IdP로 꽂아 쓸 수 있게.
-- `GET /healthz` — liveness.
+**OIDC surface (M1)**:
+- `GET /.well-known/openid-configuration` — discovery doc. `authorization_endpoint`와 `response_types_supported`는 의도적 omit (Toss SDK가 OIDC redirect 미지원).
+- `GET /.well-known/jwks.json` — ID token 서명 공개키.
+- `POST /oidc/token` — `grant_type=authorization_code` (code = Toss `authorizationCode`) / `refresh_token`. 클라이언트 인증 = `client_secret_basic` | `client_secret_post`.
+- `GET /oidc/userinfo` — Bearer 인증, sealed AT unwrap → `/login-me` over mTLS.
+- `POST /oidc/revoke` — RFC 7009. Toss `/access/remove-by-access-token` 매핑. (RFC 7009 준수: 항상 200.)
 
-## Toss token verification — open questions + 문서화된 가정
+**Admin (M1)**:
+- `POST/GET/PATCH/DELETE /admin/tenants`, `POST /admin/tenants/:id/secrets/rotate`. `ADMIN_TOKEN` env bearer로 보호. 향후 console SPA가 위에 올라간다.
 
-**전제**: 아래 내용은 2026-04 기준 퍼블릭 developer center 문서에 근거. 문서가 바뀌거나 production에서 불일치를 발견하면 여기가 TODO 목록이 된다.
+**CLI (M1)**:
+- 번들로 동봉. Admin REST의 thin client. `tenant create/list/show/rotate-secret/delete`. self-host bootstrap 모드는 로컬 config 파일에 직접 쓴다 (Bridge 미기동 상태에서도 첫 tenant 생성 가능).
 
-### 흐름 (현재 가정)
+**Firebase (M2, self-host only)**:
+- `POST /firebase-token` — Toss authorizationCode (또는 sealed bridge AT)을 받아 `firebase-admin`으로 Firebase Custom Token 서명. `FIREBASE_SERVICE_ACCOUNT` 없으면 `501 not_configured`. **공용 인스턴스는 항상 501** — end-user service account를 보관하지 않는 게 보안 정책.
+
+**Liveness**:
+- `GET /healthz`.
+
+## Toss adapter
+
+### 흐름
 
 1. Mini-app `appLogin()` → `{ authorizationCode, referrer }` (10분 유효).
-2. Bridge → `POST https://apps-in-toss-api.toss.im/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, body `{ authorizationCode, referrer }`.
-3. 응답: `{ accessToken (JWT), refreshToken, tokenType: "Bearer", expiresIn: 3599, scope }`.
-4. Bridge는 `refreshToken`을 기본적으로 호출자에 **전달하지 않음**. stateless verify 경로에 쓸 데가 없고 노출하면 blast radius만 커짐.
-5. (옵션, 요청별 플래그) `/oauth2/login-me`로 `userKey`, `scope`, `agreedTerms` 조회. PII 필드는 AES-256-GCM 암호화되어 옴 — § PII 참고.
+2. Consumer 백엔드 (Supabase Edge / Firebase Function / 등) → Bridge `POST /oidc/token`.
+3. Bridge: tenant lookup → tenant mTLS cert+key로 `https.Agent` 구성.
+4. POST `https://apps-in-toss-api.toss.im/api-partner/v1/apps-in-toss/user/oauth2/generate-token` (mTLS), body `{ authorizationCode, referrer }`.
+5. 응답 envelope: `{ resultType: "SUCCESS"|"FAIL", success?: {...}, error?: {...} }` — flat 형태 아님. 어댑터의 `envelope.ts` 한 군데에서만 다룬다.
+6. `success` 분기: `accessToken` (RS256 JWT, kid="cert", iss="cert.toss.im"), `refreshToken`, `expiresIn`, `scope`.
+7. 같은 mTLS 채널로 `/oauth2/login-me` 호출 → `userKey`, `scope`, `agreedTerms`, 암호화된 PII.
+8. ID token 서명 + sealed access_token 발급 → 표준 OAuth2 응답.
 
-### 결정됨 (M1)
+### 인증
 
-1. **partner API 인증 스킴** — **HTTP Basic Auth** (`TOSS_CLIENT_ID:TOSS_CLIENT_SECRET` base64). 문서가 불명확해 가장 흔한 partner OAuth 관례를 택했다. production에서 Toss가 다른 스킴(`X-Client-Id`/`X-Client-Secret` 헤더 등)을 요구한다고 확인되면 `src/toss/verify.ts`의 `basicAuthHeader` 경로만 교체하면 된다. 단일 변경 지점.
+- **mTLS** (`TLS_CLIENT_CERT` + `TLS_CLIENT_KEY` per tenant, PEM). 콘솔 → mTLS 인증서 → +발급받기. 390일 유효, 무제한 발급, sandbox/production 단일 cert.
+- HTTP Basic Auth / X-Client-Id 헤더 같은 스킴은 사용하지 않는다 (이전 scaffold 가정 폐기).
 
-### Open questions
+### Toss AT 서명 검증?
 
-1. **AT 서명 검증 경로** — 후보 (가능성 순): (a) Toss가 JWKS URL을 퍼블리시 → fetch + cache. (b) partner `client_secret` 기반 HS256 shared secret. (c) 퍼블릭 JWKS 없고 AT는 opaque → `/login-me` 왕복이 사실상 검증. V0는 decode만, 서명 검증 없이 `generate-token` 응답을 신뢰 (pre-stable gap, 아래 참고).
-2. **`/login-me`는 매 verify 필수인가 opt-in인가** — 현재 계획 opt-in. 다만 `sub` 안정성이 `/login-me`의 `userKey`에 의존하면 mandatory로 강제될 수 있음. V0 `sub`는 AT의 `sub` claim을 그대로 사용.
-3. **공용 인스턴스 OIDC signing key 회전 주기** — 90일? 설정 가능? v0에선 수동 회전 + 공지.
-4. **partner 사전 등록 없이 per-partner rate bucket을 제공할지** — v0는 "no". per-IP만.
-
-### 스캐폴드 초기의 가정 (pre-stable gap)
-
-V0 `/verify`는 `generate-token` 응답을 **단일 검증 신호**로 신뢰하고 AT claim은 decode만 하되 암호학적 서명 검증은 하지 않는다. 이는 pre-stable 갭으로 명시하며, open question #1이 해소되면 후속 PR에서 닫는다. README API 섹션에서도 이를 드러내 consumer가 알 수 있도록 했다.
+**하지 않는다.** Toss는 JWKS를 퍼블리시하지 않고, partner-side 서명 검증을 문서화하지 않는다. 문서가 명시하는 검증 신호는 `/login-me` 성공 그 자체. Bridge는 AT를 opaque로 취급하고, 모든 outbound claim은 mTLS + bearer로 인증된 `/login-me` 응답에서만 가져온다. 이건 시스템의 property이지 추적되는 gap이 아니다.
 
 ### Claim 매핑
 
-| Bridge claim | Source |
+| OIDC claim | Source |
 |---|---|
-| `sub` | `/login-me`의 `userKey` (세션 간 안정) — 또는 `/login-me` skip 시 AT의 `sub` |
+| `sub` | `/login-me`의 `userKey` (string-cast, 세션 간 안정) |
+| `iss` | `OIDC_ISSUER` env |
+| `aud` | OIDC `client_id` (= tenant_id) |
+| `iat`, `exp`, `nbf` | bridge clock (id_token TTL = 1h, Toss AT와 정렬) |
 | `provider` | 상수 `"toss"` |
-| `aud` | bridge issuer config |
-| `claims.scopes` | AT `scope` split |
-| `claims.userKey` | `/login-me`의 `userKey` |
-| `claims.agreedTerms` | `/login-me`의 `agreedTerms` |
+| `scope` | Toss-returned scope, space-joined |
+| `toss:userKey` | 숫자 `userKey` (type 보존) |
+| `toss:agreedTerms` | `/login-me`의 array of strings |
+| `toss:tossAccessTokenExpiresAt` | unix seconds |
 
-PII 필드(name/phone/birthday/CI/gender/nationality)는 기본적으로 `claims`에 넣지 **않음**. 암호화된 채로 통과되며, 요청별 opt-in (`include: ["name", ...]`)으로만 노출. § PII 참고.
+PII 필드(name/phone/birthday/CI/gender/nationality)는 Toss-encrypted opaque 그대로 통과만 시킨다 (passthrough only). Bridge는 PII decryption key를 보관하지 않는다.
 
-## Rate-limit 전략
+## 모듈 구조 (M1)
 
-### 공용 인스턴스
-
-- **전략**: per-IP sliding-window 카운터, in-memory per instance.
-- **기본값**: `/verify` family 60 req/min/IP. `/firebase-token`은 `/verify`를 감싸므로 같은 버킷.
-- **per-partner (client_id) 제한**은 follow-up — partner 등록 UX가 필요한데 아직 없음. v0는 per-IP만.
-- **VPS 동작**: 컨테이너 재시작 시 카운터 리셋 → best-effort 전제상 수용. multi-instance scale-out 시 유효 제한 = `limit × instance_count`. 문서에 명시.
-- **헤더**: 모든 응답에 `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. 429엔 `Retry-After` 추가.
-- **Self-host opt-out**: `RATE_LIMIT_ENABLED=false` (공용 Docker 이미지 default `true`, dev default `false`).
-
-### 추가 남용 방지
-
-- `ALLOWED_ORIGINS` env로 CORS allow-list.
-- `/verify` + `/firebase-token` payload 8 KiB cap.
-- 구조화 JSON 로그, PII 없음, `x-request-id` correlation.
-- `referrer`는 allow-list 밖 (`DEFAULT`, `SANDBOX` 외)이면 거부.
+```
+src/
+  app.ts                       // Hono app factory
+  server.ts                    // entrypoint
+  config.ts                    // env parsing, public/self-host 모드
+  errors.ts                    // OAuth2/OIDC error envelope
+  oidc/
+    discovery.ts               // /.well-known/openid-configuration
+    jwks.ts                    // /.well-known/jwks.json
+    token.ts                   // POST /oidc/token
+    userinfo.ts                // GET /oidc/userinfo
+    revoke.ts                  // POST /oidc/revoke
+    sealed-token.ts            // AEAD wrap/unwrap
+    id-token.ts                // ID token sign/verify (jose)
+    client-auth.ts             // client_secret_basic + client_secret_post
+  toss/
+    client.ts                  // mTLS https.Agent + fetch wrapper
+    generate-token.ts
+    refresh-token.ts
+    login-me.ts
+    access-remove.ts
+    envelope.ts                // resultType envelope handling
+    types.ts
+  tenants/
+    store.ts                   // TenantStore interface
+    fs-store.ts                // filesystem 백엔드
+    gcpsm-store.ts             // Google Secret Manager 백엔드
+    types.ts
+  admin/
+    routes.ts                  // /admin/tenants CRUD
+    auth.ts                    // ADMIN_TOKEN bearer 미들웨어
+  firebase/                    // M2
+    custom-token.ts
+    routes.ts
+cli/
+  index.ts
+  commands/
+    tenant-create.ts
+    tenant-list.ts
+    tenant-show.ts
+    tenant-rotate-secret.ts
+    tenant-delete.ts
+```
 
 ## Secrets 처리
 
-### Toss partner 자격증명
+### Tenant secrets (per-tenant)
 
-- `TOSS_CLIENT_ID`
-- `TOSS_CLIENT_SECRET`
-- `TOSS_API_BASE` (default `https://apps-in-toss-api.toss.im`, 샌드박스 오버라이드용)
+- mTLS cert + key (PEM) — tenant store에 암호화 저장 (GCPSM은 자체 암호화, fs는 perm 600).
+- `client_secret` — bcrypt hash 배열만 저장. 평문은 발급/회전 시 한 번만 노출, 회전 overlap 지원.
 
-### Firebase service account (self-host 전용, v0)
+### Bridge global secrets (env)
+
+- `OIDC_ISSUER` — discovery에 노출되는 issuer URL.
+- `OIDC_SIGNING_KEY` — RSA-2048 PEM. `/jwks.json`에 공개키 노출.
+- `OIDC_MASTER_KEY` — base64 32 bytes. Per-tenant sealing key를 HKDF로 유도. 공용 인스턴스에서는 GCPSM `oidc-bridge-master-key`에서 lazy load.
+- `ADMIN_TOKEN` — Admin REST bearer.
+- `TENANT_STORE` — `fs` | `gcpsm`.
+- `BRIDGE_DATA_DIR` — fs store 루트.
+- `TOSS_API_BASE` — default `https://apps-in-toss-api.toss.im`.
+
+### Firebase service account (self-host 전용, M2)
 
 - `FIREBASE_SERVICE_ACCOUNT` — raw JSON 또는 base64.
 - `GOOGLE_APPLICATION_CREDENTIALS` — JSON 경로, 대안.
 - Lazy init. 없으면 `/firebase-token` → `501 not_configured`.
 
-**공용 인스턴스는 end-user Firebase service account를 보관하지 않는다.** Firebase custom token을 원하는 mini-app 운영자는 self-host 해야 한다. 공용 인스턴스는 `/verify` + OIDC provider surface만 노출(여기선 bridge 자체가 IdP, 자체 키로 서명).
-
-### OIDC signing key (provider surface, follow-up)
-
-- `OIDC_SIGNING_KEY` — PEM RSA/EC private key.
-- `OIDC_ISSUER` — consumer가 whitelist할 issuer URL.
-- JWKS는 이로부터 유도해 `/.well-known/jwks.json`에 제공.
-- 공용 인스턴스: 스케줄 회전, 회전 이벤트 공지.
-
-### PII / `/login-me` decryption key
-
-- `TOSS_PII_DECRYPTION_KEY` — optional.
-- 없을 때: bridge는 암호화된 필드를 그대로 패스스루. 호출자(PII 관계의 법적 주체)가 자기 쪽에서 복호화.
-- 있을 때: 호출자가 `include: [...]`로 명시적 opt-in한 필드만 bridge가 복호화. default-off, per-request 명시.
+**공용 인스턴스는 end-user Firebase service account를 보관하지 않는다.**
 
 ### 로딩 관례
 
-- 모든 secret은 env var. dev는 `dotenv/config`.
+- 모든 secret은 env var 또는 tenant store. dev는 `dotenv/config`.
 - **로그 금지**. 구조화 logger가 알려진 secret 키 이름을 redact.
-- v0엔 DB 기반 secret 없음.
+
+## Rate-limit / 남용 방지 (M3)
+
+M1 범위 밖. M3에서 추가:
+- per-IP sliding-window 카운터, in-memory per instance.
+- `ALLOWED_ORIGINS` env로 CORS allow-list.
+- `/oidc/*` payload 8 KiB cap.
+- 구조화 JSON 로그, PII 없음, `x-request-id` correlation.
 
 ## MCP 전략
 
 **공용 MCP는 제공하지 않는다.** 이유:
 
 - 공용 remote MCP는 인증/레이트리밋/민감 데이터 노출 설계 비용이 큼 (umbrella `CLAUDE.md` MCP 판별 체크리스트 참고).
-- `oidc-bridge`의 기능은 전부 순수 HTTP로 노출 가능. 에이전트가 `WebFetch`/`Bash`로 바로 호출 가능.
-- 관리자 전용 remote MCP는 ops introspection용으로 고려하되 HTTP API + OpenTelemetry를 먼저 구축한 뒤. v0 밖.
+- `oidc-bridge`의 기능은 전부 표준 OIDC HTTP로 노출. 에이전트가 `WebFetch`/`Bash`로 바로 호출 가능.
+- 관리자 전용 remote MCP는 ops introspection용으로 고려하되 HTTP API + OpenTelemetry를 먼저 구축한 뒤. M1 밖.
 
 ## 기술 스택
 
 - **TypeScript** (ESM only, strict)
 - **Hono** — HTTP framework (+ `@hono/node-server`)
+- **jose** — ID token sign/verify, JWKS
+- **bcryptjs** — client_secret hashing
+- **@google-cloud/secret-manager** — GCPSM tenant store (lazy)
+- **firebase-admin** — M2, lazy
+- **commander** (또는 citty) — CLI
+- **node:crypto** / **node:tls** — AEAD, HKDF, mTLS Agent (built-in)
 - **tsdown** — 빌드
 - **vitest** — 테스트
 - **pnpm** — 패키지 매니저 (10.33.0)
@@ -188,10 +250,11 @@ pnpm format      # biome format --write .
 
 ## 테스트 전략
 
-- **vitest (unit)**: claim 매핑, rate limiter, error envelope shape.
-- **Integration**: `app.request()`로 Hono app을 in-process 호출 — 네트워크 없음. Toss upstream은 `fetch` 레이어에서 mock.
-- **Contract fixtures**: scaffold 다음으로 `src/__fixtures__/`에 redacted `/generate-token` + `/login-me` 응답 커밋.
-- **E2E against real Toss**: `pnpm test:e2e:live`(수동, sandbox 자격증명 필요). CI 아님.
+- **Unit (vitest)**: sealing wrap/unwrap roundtrip + tamper rejection / ID token sign+verify / client auth (Basic + Post + bcrypt rotation overlap) / Toss envelope parsing / claim 매핑.
+- **Integration (Hono `app.request()`, no network)**: `/oidc/token` happy + invalid_client + invalid_grant / `/oidc/userinfo` happy + bad bearer / `/oidc/revoke` always-200 / discovery + JWKS shape consistency / Admin CRUD with/without token.
+- **mTLS**: `https.Agent`가 tenant PEM으로 빌드되는지 indirect assertion. 실 핸드셰이크는 `pnpm test:e2e:live` (수동, sandbox cert 필요, CI 아님).
+- **Contract fixtures**: `src/__fixtures__/`에 redacted `/generate-token` + `/login-me` SUCCESS/FAIL 응답.
+- **CLI**: `--help` smoke + create-then-list against in-process Bridge.
 
 ## 릴리즈 정책
 
@@ -206,15 +269,18 @@ pnpm format      # biome format --write .
 | # | 내용 | 상태 |
 |---|---|---|
 | M0 | Hono scaffold + `/verify` 스텁 + Dockerfile + CI green | 완료 |
-| M1 | 실제 `/verify` 구현 (Toss `generate-token`, Basic Auth). JWT 서명 검증 경로 확정은 follow-up | **부분 완료 (현재 PR)** — 서명 검증만 남음 |
-| M2 | `/firebase-token` + Firebase Admin (self-host) | next |
-| M3 | Rate-limit 미들웨어 + CORS + payload cap | next |
-| M4 | OIDC provider surface (`/authorize`, `/token`, JWKS) | follow-on |
-| M5 | 공용 인스턴스용 Vultr Seoul 배포 workflow (docker-compose + Caddy + GHCR + SSH deploy) | 인프라 코드 완료, Dave 수동 셋업 대기 |
-| M6 | `sdk-example` auth 데모를 공용 인스턴스에 연결 | M4 이후 |
+| M0.5 | 임시 `/verify` (Basic Auth 가정) — **M1 redesign으로 폐기 예정** | 완료 (현재 main의 상태) |
+| **M1** | **Multi-tenant OIDC + mTLS proxy** (현재 작업): tenant store, Admin REST + CLI, OIDC token/userinfo/revoke + discovery + JWKS, sealed access_token, mTLS Toss adapter | **진행 중** |
+| M2 | `/firebase-token` (self-host) + `firebase-admin` lazy init | next |
+| M3 | Rate-limit + CORS + payload cap + 구조화 로깅 | next |
+| M4 | (Optional) 헬퍼 mini-app 기반 `/authorize` redirect 흐름 | follow-on, demand 봐서 |
+| **M5** | **공용 인스턴스 launch** — Vultr Seoul 배포 workflow (docker-compose + Caddy + GHCR + SSH deploy, 인프라 코드 완료) + DNS (`oidc-bridge.aitc.dev`) + founding tenant 등록 + **sdk-example dog-fooding** (Supabase Edge Function으로 `AuthPage` 재구축, 공용 bridge로 실제 Supabase 세션 E2E). dog-fooding 성공이 launch gate. | M1 완료 후 launch |
+| M6 | `sdk-example` auth 데모를 공용 인스턴스에 연결 (M5 dog-fooding 결과의 polish + 추가 IdP 시나리오) | M5 이후 |
+
+상세 M1 설계는 [`docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md`](docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md). M1은 breaking change — 기존 `/verify`는 같은 릴리즈에서 제거되고 self-host 운영자에게는 `MIGRATION.md`가 제공된다.
 
 ## Status
 
-`POST /verify` 가동 (Toss `generate-token` 연동, Basic Auth, JWT payload decode). AT 서명 검증과 `/firebase-token`, OIDC provider surface, rate-limit은 follow-up.
+현재 main: `POST /verify` 가동 (임시 Basic Auth 모델). M1 redesign이 진행 중이며 이 PR로 다중 tenant + mTLS + OIDC surface로 전환된다.
 
 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.

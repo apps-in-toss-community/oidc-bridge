@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { publicView } from '../../src/tenants/public-view.js';
 import { offlineStore } from '../bootstrap.js';
 import { rest } from '../rest-client.js';
 
@@ -27,6 +28,7 @@ export async function tenantCreate(g: GlobalOpts, opts: CreateOpts): Promise<voi
     console.log(
       JSON.stringify(
         {
+          tenant: publicView(created.tenant),
           client_id: created.tenant.id,
           client_secret: created.client_secret,
         },

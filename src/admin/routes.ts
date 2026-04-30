@@ -1,22 +1,9 @@
 import { Hono } from 'hono';
+import { publicView } from '../tenants/public-view.js';
 import type { TenantStore } from '../tenants/store.js';
 import { TenantNotFoundError } from '../tenants/store.js';
-import type { TenantRecord } from '../tenants/types.js';
 import { isObject } from '../utils/json.js';
 import { adminAuth } from './auth.js';
-
-function publicView(t: TenantRecord) {
-  return {
-    id: t.id,
-    name: t.name,
-    environment: t.environment,
-    mtls_fingerprint: t.mtls.cert_fingerprint_sha256,
-    mtls_expires_at: t.mtls.expires_at,
-    sealing_key_version: t.sealing_key_version,
-    created_at: t.created_at,
-    updated_at: t.updated_at,
-  };
-}
 
 export function buildAdminRouter(store: TenantStore, adminToken: string): Hono {
   const r = new Hono();

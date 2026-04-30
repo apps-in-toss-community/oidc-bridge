@@ -23,7 +23,7 @@ Once that is set up, day-to-day operation is "merge to main".
 
 1. Sign in / sign up at <https://www.vultr.com>.
 2. **Deploy New Server** → Cloud Compute → **Seoul (ICN)**.
-3. Plan: **Regular Cloud Compute, 1 vCPU / 1 GB RAM / 25 GB NVMe** (~$6/mo).
+3. Plan: **Regular Cloud Compute, 1 vCPU / 1 GB RAM / 25 GB NVMe** (`vc2-1c-1gb`, ~$5/mo).
    The bridge is stateless and IO-bound; this size is comfortable for the
    community traffic budget.
 4. OS: **Ubuntu 24.04 LTS**.
@@ -121,7 +121,7 @@ dig +short bridge.<your-domain>
 
 Should return the VPS IP.
 
-## 5. Place the compose stack on the VPS
+## 5. Place the `.env` on the VPS
 
 ```sh
 sudo mkdir -p /opt/oidc-bridge
@@ -129,24 +129,32 @@ sudo chown deploy:deploy /opt/oidc-bridge
 cd /opt/oidc-bridge
 ```
 
-Copy the three files from this repo into `/opt/oidc-bridge/`:
+`docker-compose.yml` and `Caddyfile` are synced automatically by the
+deploy workflow on every push to `main` (see § 8) — you do not place
+them by hand. Only `.env` is managed out-of-band, because it holds
+secrets and the workflow has no business touching them:
 
-- `docker-compose.yml`
-- `Caddyfile`
-- `.env` — created from `.env.example`
-
-Edit `Caddyfile`: replace `bridge.example.com` with your actual hostname.
-
-Edit `.env`:
-
-- `ACME_EMAIL` — your ops email.
-- `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` — partner credentials.
-- Leave `RATE_LIMIT_ENABLED=true` for the public instance; flip to `false`
-  for self-hosts that want unrestricted traffic.
+```sh
+# On the VPS, create /opt/oidc-bridge/.env from the .env.example in this repo.
+# Edit it to set:
+#   ACME_EMAIL              — your ops email
+#   TOSS_CLIENT_ID          — partner credential
+#   TOSS_CLIENT_SECRET      — partner credential
+#   RATE_LIMIT_ENABLED=true — for the public instance; flip to false on
+#                             self-hosts that want unrestricted traffic
+nano .env
+```
 
 For self-hosts that need `/firebase-token`, also set
 `FIREBASE_SERVICE_ACCOUNT` (raw JSON or base64). The community public
 instance does **not** carry an end-user Firebase service account.
+
+The repo's `Caddyfile` ships with `oidc-bridge.aitc.dev` baked in
+because that is the community public instance hostname. Self-hosters
+running their own deploy workflow against a fork should change it to
+their own hostname (and commit, so `main` carries it). Alternatively,
+keep a local-only `Caddyfile` on your VPS and remove `Caddyfile` from
+the workflow's `source:` list so the sync step does not overwrite it.
 
 ## 6. GitHub repo secrets
 

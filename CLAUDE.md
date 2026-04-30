@@ -26,7 +26,7 @@
 
 ### 운영 모델
 
-- **공용 인스턴스** (rate-limited, best-effort, SLA 없음) — **Vultr Cloud Compute, Seoul (ICN) 리전**, 단일 VPS + Docker + Caddy(자동 HTTPS). 한국 리전 + IO-bound 워크로드 + ~$6/mo + self-hoster가 그대로 docker compose로 복제 가능해서 1순위.
+- **공용 인스턴스** (rate-limited, best-effort, SLA 없음) — **Vultr Cloud Compute, Seoul (ICN) 리전**, 단일 VPS + Docker + Caddy(자동 HTTPS). 한국 리전 + IO-bound 워크로드 + ~$5/mo (`vc2-1c-1gb`) + self-hoster가 그대로 docker compose로 복제 가능해서 1순위.
 - **Self-host** (Docker/Fly.io/k8s/임의 Docker host) — 동일 Docker 이미지 + 동일 `docker-compose.yml`. `RATE_LIMIT_ENABLED=false` 기본.
 
 보안이 민감한 production 사용자는 self-host를 권장.

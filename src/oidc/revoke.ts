@@ -3,11 +3,8 @@ import type { Config } from '../config.js';
 import type { TenantStore } from '../tenants/store.js';
 import { removeByAccessToken } from '../toss/access-remove.js';
 import { buildAgent } from '../toss/client.js';
+import { isObject } from '../utils/json.js';
 import { unsealAccessToken } from './sealed-token.js';
-
-function isObject(x: unknown): x is Record<string, unknown> {
-  return typeof x === 'object' && x !== null && !Array.isArray(x);
-}
 
 /**
  * RFC 7009 §2.2: respond 200 whether revocation succeeded or the token was
@@ -16,7 +13,7 @@ function isObject(x: unknown): x is Record<string, unknown> {
 export function mountRevoke(app: Hono, config: Config, store: TenantStore): void {
   app.post('/oidc/revoke', async (c) => {
     const ok = (): Response => c.body(null, 200);
-    const ctype = c.req.header('content-type') ?? '';
+    const ctype = (c.req.header('content-type') ?? '').toLowerCase();
     let token: string | undefined;
     if (ctype.includes('application/x-www-form-urlencoded')) {
       const text = await c.req.text();

@@ -1,10 +1,8 @@
+import { isObject } from '../utils/json.js';
+
 export type ParsedEnvelope<T> =
   | { ok: true; value: T }
   | { ok: false; reason: string; description?: string };
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 export function parseTossEnvelope<T>(raw: unknown): ParsedEnvelope<T> {
   if (!isObject(raw)) throw new Error('toss response is not an object');

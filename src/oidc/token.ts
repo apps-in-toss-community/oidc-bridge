@@ -7,14 +7,14 @@ import { buildAgent } from '../toss/client.js';
 import { generateToken } from '../toss/generate-token.js';
 import { loginMe } from '../toss/login-me.js';
 import { refreshToken as tossRefresh } from '../toss/refresh-token.js';
+import { isObject } from '../utils/json.js';
 import { mapToIdTokenClaims } from './claim-mapping.js';
 import { extractClientCredentials } from './client-auth.js';
 import { signIdToken } from './id-token.js';
 import { type SealedPayload, sealAccessToken, unsealAccessToken } from './sealed-token.js';
 
-function isObject(x: unknown): x is Record<string, unknown> {
-  return typeof x === 'object' && x !== null && !Array.isArray(x);
-}
+/** Sealed refresh-token lifetime (14 days). */
+const REFRESH_TOKEN_TTL_SECONDS = 14 * 24 * 3600;
 
 // Precomputed bcrypt-cost-12 hash of a random string, used to equalize
 // timing on unknown-tenant lookups. The corresponding plaintext is never
@@ -40,7 +40,7 @@ function decodeJwtExp(jwt: string): number | null {
 export function mountToken(app: Hono, config: Config, store: TenantStore): void {
   app.post('/oidc/token', async (c) => {
     try {
-      const ctype = c.req.header('content-type') ?? '';
+      const ctype = (c.req.header('content-type') ?? '').toLowerCase();
       const params: Record<string, string> = {};
       if (ctype.includes('application/x-www-form-urlencoded')) {
         const text = await c.req.text();
@@ -155,7 +155,7 @@ export function mountToken(app: Hono, config: Config, store: TenantStore): void 
           tenant_id: tenant.id,
           toss_access_token: tossAt,
           toss_refresh_token: tossRt,
-          exp: now + 14 * 24 * 3600,
+          exp: now + REFRESH_TOKEN_TTL_SECONDS,
         },
         masterKey: config.masterKey,
         sealingKeyVersion: tenant.sealing_key_version,

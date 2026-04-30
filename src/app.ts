@@ -5,10 +5,7 @@ import { mountToken } from './oidc/token.js';
 import { mountUserinfo } from './oidc/userinfo.js';
 import type { TenantStore } from './tenants/store.js';
 import { verifyTossAuthorizationCode } from './toss/verify.js';
-
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+import { isObject as isJsonObject } from './utils/json.js';
 
 /**
  * Build the Hono app.

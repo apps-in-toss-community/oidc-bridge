@@ -11,7 +11,7 @@
 ## Low Priority
 - [ ] Self-host documentation: expanded deployment recipes for Fly.io, Docker Compose, k8s, plus a sample Supabase / Auth0 / Firebase integration walkthrough.
 - [ ] Observability: structured JSON logging (no PII, redacted secret keys), `x-request-id` correlation, `/healthz` with dependency checks, optional OpenTelemetry traces.
-- [ ] Cloud Run deploy workflow for the public instance (M5): GitHub Actions → build + push `ghcr.io/apps-in-toss-community/oidc-bridge:{latest,sha-<sha>}` → `gcloud run deploy` to `asia-northeast3`.
+- [x] Vultr Seoul deploy workflow for the public instance (M5): GitHub Actions → build + push `ghcr.io/apps-in-toss-community/oidc-bridge:{latest,sha-<sha>}` → SSH into the Vultr ICN VPS and `docker compose pull && up -d`. Compose stack with Caddy auto-HTTPS lives at the repo root. See [`docs/DEPLOY.md`](./docs/DEPLOY.md). _Infra code shipped; first manual VPS provisioning is on Dave._
 - [ ] `sdk-example` auth demo wired against the public instance (M6): real toss login → Supabase/Firebase session E2E.
 - [ ] Contract fixtures under `src/__fixtures__/`: redacted `/generate-token` and `/login-me` responses for unit + integration tests.
 - [ ] `pnpm test:e2e:live` target — manual E2E against real Toss sandbox credentials; not in CI.

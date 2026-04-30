@@ -35,9 +35,9 @@ oidc-bridge ──▶ Toss /oauth2/generate-token ──▶ verified claims
 
 ## Public community instance
 
-A community-operated instance is planned on **Google Cloud Run `asia-northeast3` (Seoul)**:
+A community-operated instance is planned at `bridge.apps-in-toss-community.org` (placeholder — domain TBD), running on a single **Vultr Cloud Compute VPS in Seoul (ICN)** with Docker + Caddy auto-HTTPS:
 
-- **Rate-limited** (per-IP, default 60 req/min; counters are per-instance, reset on scale-to-zero)
+- **Rate-limited** (per-IP, default 60 req/min; counters are per-instance, reset on container restart)
 - **Best-effort, no SLA, no uptime guarantee**
 - **Community-operated** — NOT provided, sponsored, or endorsed by Toss or the Apps in Toss team
 - Exposes `/verify` and the OIDC provider surface. Does **not** hold end-user Firebase service accounts — use self-host for `/firebase-token`.
@@ -52,7 +52,7 @@ The same Docker image backs the public instance and self-hosts. Image (coming so
 ghcr.io/apps-in-toss-community/oidc-bridge:latest
 ```
 
-### Run
+### Run (single container)
 
 ```bash
 docker run --rm -p 8080:8080 \
@@ -61,7 +61,17 @@ docker run --rm -p 8080:8080 \
   ghcr.io/apps-in-toss-community/oidc-bridge:latest
 ```
 
-`/healthz` → `200 ok`. Service listens on `PORT` (default `8080`, Cloud Run convention). See [Environment](#environment) for the full set of knobs.
+`/healthz` → `200 ok`. Service listens on `PORT` (default `8080`). See [Environment](#environment) for the full set of knobs.
+
+### Run with TLS (recommended for any public host)
+
+The repo ships a production [`docker-compose.yml`](./docker-compose.yml) and [`Caddyfile`](./Caddyfile) that pair the bridge with Caddy for automatic Let's Encrypt HTTPS. Reference setup is **Vultr Cloud Compute, Seoul (ICN) region** (~$6/mo) — see [`docs/DEPLOY.md`](./docs/DEPLOY.md) — but the stack runs unchanged on any Docker host.
+
+```bash
+cp .env.example .env   # fill in TOSS_CLIENT_ID / TOSS_CLIENT_SECRET / ACME_EMAIL
+# Edit Caddyfile: replace bridge.example.com with your domain.
+docker compose up -d
+```
 
 ### Environment
 

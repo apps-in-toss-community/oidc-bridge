@@ -1,0 +1,50 @@
+# Production docker-compose stack for self-hosting oidc-bridge.
+#
+# Designed for the community Vultr Seoul (ICN) instance, but works on any
+# Docker host. Caddy terminates TLS and reverse-proxies to the app on the
+# internal network — port 8080 is NOT published to the host.
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in values.
+#   2. Edit Caddyfile, replacing bridge.example.com with your domain.
+#   3. Point your domain's A record at this host's public IP.
+#   4. docker compose up -d
+#
+# CI/CD updates the `latest` tag and the deploy workflow runs
+# `docker compose pull && docker compose up -d` over SSH.
+
+services:
+  app:
+    image: ghcr.io/apps-in-toss-community/oidc-bridge:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - '8080'
+    networks:
+      - bridge
+    # The image's HEALTHCHECK is honored automatically by Docker; compose
+    # surfaces the health state in `docker compose ps`.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp' # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - bridge
+    depends_on:
+      - app
+
+networks:
+  bridge:
+
+volumes:
+  caddy_data: # ACME account + issued certs — persist across restarts
+  caddy_config:

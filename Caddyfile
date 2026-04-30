@@ -1,0 +1,25 @@
+# Replace bridge.example.com with the domain whose A record points at this
+# host. Caddy will obtain and renew a Let's Encrypt certificate automatically
+# on first request — no manual cert management required. The ACME account
+# email is read from the ACME_EMAIL env var (set in .env).
+#
+# `app:8080` resolves over the compose-internal `bridge` network.
+{
+	email {$ACME_EMAIL}
+}
+
+bridge.example.com {
+	encode gzip zstd
+
+	# Caddy automatically forwards X-Forwarded-{For,Proto,Host} to the
+	# upstream. We add X-Real-IP so the bridge's per-IP rate limiter (M3)
+	# can pick up the original client address without parsing XFF.
+	reverse_proxy app:8080 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Liveness probe — useful for external uptime monitors.
+	handle /healthz {
+		reverse_proxy app:8080
+	}
+}

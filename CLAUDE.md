@@ -140,6 +140,7 @@ TypeScript ESM strict / **Hono** (+ `@hono/node-server`) / **jose** (ID token si
 ```bash
 pnpm dev         # watch
 pnpm build       # tsdown
+pnpm start       # node dist/server.mjs (배포 런타임 진입점)
 pnpm typecheck   # tsc --noEmit
 pnpm test        # vitest run
 pnpm lint        # biome check .

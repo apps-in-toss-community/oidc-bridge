@@ -1,0 +1,7 @@
+{
+  "resultType": "FAIL",
+  "error": {
+    "reason": "INVALID_AUTHORIZATION_CODE",
+    "description": "The authorization code is invalid or expired."
+  }
+}

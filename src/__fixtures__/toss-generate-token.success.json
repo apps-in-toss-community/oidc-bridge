@@ -1,0 +1,10 @@
+{
+  "resultType": "SUCCESS",
+  "success": {
+    "accessToken": "eyJraWQiOiJjZXJ0IiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiI0MjAwMDAwMDAwMSIsInVzZXJLZXkiOjQyMDAwMDAwMDAxLCJzY29wZSI6InVzZXJfa2V5IHVzZXJfbmFtZSIsImV4cCI6MTkwMDAwMDAwMCwiaXNzIjoiaHR0cHM6Ly9jZXJ0LnRvc3MuaW0ifQ.fakefake",
+    "refreshToken": "fake-refresh-token-bytes",
+    "tokenType": "Bearer",
+    "expiresIn": 3600,
+    "scope": "user_key user_name"
+  }
+}

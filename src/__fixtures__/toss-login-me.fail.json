@@ -1,0 +1,7 @@
+{
+  "resultType": "FAIL",
+  "error": {
+    "reason": "ACCESS_TOKEN_EXPIRED",
+    "description": "Access token is expired."
+  }
+}

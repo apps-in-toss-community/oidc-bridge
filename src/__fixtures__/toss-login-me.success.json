@@ -1,0 +1,14 @@
+{
+  "resultType": "SUCCESS",
+  "success": {
+    "userKey": 4200000000001,
+    "scope": "user_key user_name",
+    "agreedTerms": ["TERMS_OF_SERVICE", "PRIVACY"],
+    "name": "<redacted>",
+    "phone": "<redacted>",
+    "birthday": "<redacted>",
+    "ci": "<redacted>",
+    "gender": "<redacted>",
+    "nationality": "<redacted>"
+  }
+}

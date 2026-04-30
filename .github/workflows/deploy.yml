@@ -4,9 +4,18 @@ name: Deploy
 # the community Vultr Seoul VPS and pull + restart the compose stack.
 #
 # Required repository secrets (see docs/DEPLOY.md):
-#   VULTR_HOST     — VPS IPv4 / hostname
-#   VULTR_USER     — SSH user with docker access (e.g. `deploy`)
-#   VULTR_SSH_KEY  — private key matching an authorized_keys entry on the VPS
+#   VULTR_HOST          — VPS IPv4 / hostname
+#   VULTR_USER          — SSH user with docker access (e.g. `deploy`)
+#   VULTR_SSH_KEY       — private key matching an authorized_keys entry on the VPS
+#   ACME_EMAIL          — Let's Encrypt registration email for Caddy
+#   TOSS_CLIENT_ID      — Toss partner OAuth2 client_id
+#   TOSS_CLIENT_SECRET  — Toss partner OAuth2 client_secret
+#
+# Optional repository secrets (only emitted into .env when set):
+#   TOSS_API_BASE, RATE_LIMIT_ENABLED, ALLOWED_ORIGINS,
+#   FIREBASE_SERVICE_ACCOUNT, GOOGLE_APPLICATION_CREDENTIALS,
+#   OIDC_SIGNING_KEY, OIDC_ISSUER, OIDC_MASTER_KEY, ADMIN_TOKEN,
+#   TENANT_STORE, BRIDGE_DATA_DIR, TOSS_PII_DECRYPTION_KEY
 #
 # GHCR auth uses the workflow-scoped GITHUB_TOKEN; no separate secret needed.
 
@@ -74,16 +83,91 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Sync the compose stack to the VPS first so changes to docker-compose.yml
-      # or Caddyfile actually land. .env is intentionally NOT shipped — it holds
-      # secrets and is managed out-of-band on the VPS.
+      # Render the runtime .env from GitHub Actions secrets. GHA secrets are the
+      # canonical store; the VPS-side .env is treated as derived state. Only
+      # secrets that are actually set get emitted, so unset optional vars fall
+      # back to the image / docker-compose defaults instead of being shadowed
+      # by empty strings.
+      - name: Render bridge .env from secrets
+        env:
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
+          TOSS_CLIENT_ID: ${{ secrets.TOSS_CLIENT_ID }}
+          TOSS_CLIENT_SECRET: ${{ secrets.TOSS_CLIENT_SECRET }}
+          TOSS_API_BASE: ${{ secrets.TOSS_API_BASE }}
+          RATE_LIMIT_ENABLED: ${{ secrets.RATE_LIMIT_ENABLED }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          OIDC_SIGNING_KEY: ${{ secrets.OIDC_SIGNING_KEY }}
+          OIDC_ISSUER: ${{ secrets.OIDC_ISSUER }}
+          OIDC_MASTER_KEY: ${{ secrets.OIDC_MASTER_KEY }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          TENANT_STORE: ${{ secrets.TENANT_STORE }}
+          BRIDGE_DATA_DIR: ${{ secrets.BRIDGE_DATA_DIR }}
+          TOSS_PII_DECRYPTION_KEY: ${{ secrets.TOSS_PII_DECRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          missing=()
+          for var in ACME_EMAIL TOSS_CLIENT_ID TOSS_CLIENT_SECRET; do
+            if [ -z "${!var:-}" ]; then
+              missing+=("$var")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required GitHub Actions secret(s): ${missing[*]}"
+            echo "::error::Add them at https://github.com/${GITHUB_REPOSITORY}/settings/secrets/actions"
+            exit 1
+          fi
+
+          # emit KEY → quoted KEY="value" line, but only if value is non-empty.
+          # Escapes \ and " so PEM blocks / multi-line values survive.
+          emit() {
+            local key="$1"
+            local val="${!key:-}"
+            if [ -z "$val" ]; then
+              return 0
+            fi
+            local escaped
+            escaped=$(printf '%s' "$val" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+            printf '%s="%s"\n' "$key" "$escaped" >> .env.render
+          }
+
+          : > .env.render
+          {
+            echo "# Rendered by .github/workflows/deploy.yml at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "# Source of truth: GitHub Actions secrets. Do not edit on the VPS."
+          } >> .env.render
+
+          emit ACME_EMAIL
+          emit TOSS_CLIENT_ID
+          emit TOSS_CLIENT_SECRET
+          emit TOSS_API_BASE
+          emit RATE_LIMIT_ENABLED
+          emit ALLOWED_ORIGINS
+          emit FIREBASE_SERVICE_ACCOUNT
+          emit GOOGLE_APPLICATION_CREDENTIALS
+          emit OIDC_SIGNING_KEY
+          emit OIDC_ISSUER
+          emit OIDC_MASTER_KEY
+          emit ADMIN_TOKEN
+          emit TENANT_STORE
+          emit BRIDGE_DATA_DIR
+          emit TOSS_PII_DECRYPTION_KEY
+
+          echo "rendered $(grep -c '^[A-Z]' .env.render) env var(s) into .env.render"
+
+      # Sync the compose stack + rendered .env to the VPS. The .env is uploaded
+      # as `.env.render` and atomically renamed on the VPS so an in-flight
+      # docker compose pull never sees a half-written file.
       - name: Sync compose stack to Vultr
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VULTR_HOST }}
           username: ${{ secrets.VULTR_USER }}
           key: ${{ secrets.VULTR_SSH_KEY }}
-          source: 'docker-compose.yml,Caddyfile'
+          source: 'docker-compose.yml,Caddyfile,.env.render'
           target: /opt/oidc-bridge/
           overwrite: true
 
@@ -97,6 +181,8 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/oidc-bridge
+            chmod 600 .env.render
+            mv .env.render .env
             docker compose pull
             docker compose up -d --remove-orphans
             # Wait for the new container to report healthy before exiting.

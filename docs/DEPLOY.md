@@ -13,9 +13,12 @@ The end state is:
 - `/opt/oidc-bridge/` contains `docker-compose.yml`, `Caddyfile`, `.env`.
 - Caddy terminates TLS for `bridge.<your-domain>` and proxies to the bridge.
 - A GitHub Actions workflow rebuilds the image on every push to `main`,
-  pushes to GHCR, then SSHs into the VPS and runs `docker compose pull && up -d`.
+  pushes to GHCR, renders `.env` from repo secrets and SCPs it onto the
+  VPS, then SSHs in and runs `docker compose pull && up -d`.
 
-Once that is set up, day-to-day operation is "merge to main".
+Once that is set up, day-to-day operation is "merge to main". GitHub
+Actions secrets are the **canonical store** for the runtime config; the
+`.env` file on the VPS is derived state, overwritten on every deploy.
 
 ---
 
@@ -121,33 +124,18 @@ dig +short bridge.<your-domain>
 
 Should return the VPS IP.
 
-## 5. Place the `.env` on the VPS
+## 5. Prepare `/opt/oidc-bridge` on the VPS
 
 ```sh
 sudo mkdir -p /opt/oidc-bridge
 sudo chown deploy:deploy /opt/oidc-bridge
-cd /opt/oidc-bridge
 ```
 
-`docker-compose.yml` and `Caddyfile` are synced automatically by the
+`docker-compose.yml`, `Caddyfile`, and `.env` are all synced by the
 deploy workflow on every push to `main` (see § 8) — you do not place
-them by hand. Only `.env` is managed out-of-band, because it holds
-secrets and the workflow has no business touching them:
-
-```sh
-# On the VPS, create /opt/oidc-bridge/.env from the .env.example in this repo.
-# Edit it to set:
-#   ACME_EMAIL              — your ops email
-#   TOSS_CLIENT_ID          — partner credential
-#   TOSS_CLIENT_SECRET      — partner credential
-#   RATE_LIMIT_ENABLED=true — for the public instance; flip to false on
-#                             self-hosts that want unrestricted traffic
-nano .env
-```
-
-For self-hosts that need `/firebase-token`, also set
-`FIREBASE_SERVICE_ACCOUNT` (raw JSON or base64). The community public
-instance does **not** carry an end-user Firebase service account.
+them by hand. The workflow renders `.env` from GitHub Actions secrets,
+SCPs it as `.env.render`, then atomically renames it to `.env` on the
+VPS with `chmod 600`.
 
 The repo's `Caddyfile` ships with `oidc-bridge.aitc.dev` baked in
 because that is the community public instance hostname. Self-hosters
@@ -159,13 +147,36 @@ the workflow's `source:` list so the sync step does not overwrite it.
 ## 6. GitHub repo secrets
 
 In the repo: **Settings → Secrets and variables → Actions → New repository
-secret**. Add:
+secret**. GitHub Actions secrets are the **canonical store** for the
+runtime config — there is no `.env` to edit on the VPS by hand.
+
+### Required (deploy will fail-fast without these)
 
 | Name | Value |
 |---|---|
 | `VULTR_HOST` | VPS public IPv4 (or DNS name) |
 | `VULTR_USER` | `deploy` |
 | `VULTR_SSH_KEY` | private key whose public half is in `~deploy/.ssh/authorized_keys` |
+| `ACME_EMAIL` | Let's Encrypt registration email for Caddy |
+| `TOSS_CLIENT_ID` | Toss partner OAuth2 client_id |
+| `TOSS_CLIENT_SECRET` | Toss partner OAuth2 client_secret |
+
+### Optional (only emitted into `.env` when set)
+
+| Name | When to set it |
+|---|---|
+| `TOSS_API_BASE` | Override the default `https://apps-in-toss-api.toss.im` |
+| `RATE_LIMIT_ENABLED` | `true` on the public instance, `false` on self-hosts |
+| `ALLOWED_ORIGINS` | M3 CORS allow-list |
+| `OIDC_ISSUER` | Issuer URL exposed in `/.well-known/openid-configuration` |
+| `OIDC_SIGNING_KEY` | RSA-2048 PEM for ID token signing |
+| `OIDC_MASTER_KEY` | base64-32B HKDF master for sealing keys |
+| `ADMIN_TOKEN` | Bearer token for `/admin/*` |
+| `TENANT_STORE` | `fs` (default) \| `gcpsm` |
+| `BRIDGE_DATA_DIR` | fs-store root, default `/data` in the image |
+| `FIREBASE_SERVICE_ACCOUNT` | Self-host only: raw JSON or base64. Public instance leaves this unset → `/firebase-token` returns 501. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Self-host alternative: path to JSON service account in the image |
+| `TOSS_PII_DECRYPTION_KEY` | Self-host only: PII passthrough decryption key |
 
 `VULTR_SSH_KEY` must be the full PEM block (including the
 `-----BEGIN ... PRIVATE KEY-----` header). Generate a dedicated key for
@@ -177,7 +188,19 @@ ssh-copy-id -i gha-deploy.pub deploy@<VPS_IP>
 # Paste the contents of `gha-deploy` into the VULTR_SSH_KEY secret.
 ```
 
+PEM blocks (`OIDC_SIGNING_KEY`, `VULTR_SSH_KEY`) and JSON service
+accounts (`FIREBASE_SERVICE_ACCOUNT`) can be pasted as-is — the workflow
+escapes `\` and `"` so newlines and special chars survive the round-trip
+into `.env`.
+
 `GITHUB_TOKEN` is provided automatically; no GHCR PAT is needed.
+
+### Rotating a secret
+
+Update the GitHub Actions secret, then trigger a deploy (push an empty
+commit to `main`, or run the workflow from the Actions tab). The next
+run renders a fresh `.env` and restarts the container. There is no need
+to SSH in.
 
 ## 7. First boot
 

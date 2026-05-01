@@ -1005,7 +1005,8 @@ export function createSqliteStorage(opts: { path: string }): Storage {
     },
 
     async createApp(input) {
-      const now = iso(new Date());
+      const nowDate = new Date();
+      const now = iso(nowDate);
       db.prepare(
         `INSERT INTO apps (
           id, workspace_id, app_id_toss, display_title, client_id,
@@ -1030,8 +1031,23 @@ export function createSqliteStorage(opts: { path: string }): Storage {
         now,
         now,
       );
-      const row = db.prepare('SELECT * FROM apps WHERE id = ?').get(input.id) as AppRow;
-      return mapApp(row);
+      return {
+        id: input.id,
+        workspaceId: input.workspaceId,
+        appIdToss: input.appIdToss,
+        displayTitle: input.displayTitle,
+        clientId: input.clientId,
+        clientSecretHashes: input.clientSecretHashes,
+        mtlsCertEnc: input.mtlsCertEnc,
+        mtlsKeyEnc: input.mtlsKeyEnc,
+        sealingKeyVersion: input.sealingKeyVersion,
+        allowedOrigins: input.allowedOrigins,
+        ownershipStatus: input.ownershipStatus,
+        ownershipGraceUntil: input.ownershipGraceUntil,
+        rawTokensEnabled: input.rawTokensEnabled,
+        createdAt: nowDate,
+        updatedAt: nowDate,
+      };
     },
     async getApp(id) {
       const row = db.prepare('SELECT * FROM apps WHERE id = ?').get(id) as AppRow | undefined;
@@ -1125,12 +1141,18 @@ export function createSqliteStorage(opts: { path: string }): Storage {
     },
 
     async createMasterKey(input) {
-      const now = iso(new Date());
+      const nowDate = new Date();
+      const now = iso(nowDate);
       db.prepare(
         'INSERT INTO master_keys (id, version, created_at, retired_at, provider_ref) VALUES (?, ?, ?, NULL, ?)',
       ).run(input.id, input.version, now, input.providerRef);
-      const row = db.prepare('SELECT * FROM master_keys WHERE id = ?').get(input.id) as MasterKeyRow;
-      return mapMasterKey(row);
+      return {
+        id: input.id,
+        version: input.version,
+        createdAt: nowDate,
+        retiredAt: null,
+        providerRef: input.providerRef,
+      };
     },
     async getMasterKeyByVersion(version) {
       const row = db.prepare('SELECT * FROM master_keys WHERE version = ?').get(version) as
@@ -1143,13 +1165,13 @@ export function createSqliteStorage(opts: { path: string }): Storage {
       return rows.map(mapMasterKey);
     },
     async retireMasterKey(version, retiredAt) {
-      db.prepare('UPDATE master_keys SET retired_at = ? WHERE version = ?').run(
-        iso(retiredAt),
-        version,
-      );
-      const row = db.prepare('SELECT * FROM master_keys WHERE version = ?').get(version) as MasterKeyRow;
-      if (!row) throw new Error(`master_key version ${version} not found`);
-      return mapMasterKey(row);
+      const existing = db.prepare('SELECT * FROM master_keys WHERE version = ?').get(version) as
+        | MasterKeyRow
+        | undefined;
+      if (!existing) throw new Error(`master_key version ${version} not found`);
+      const retiredIso = iso(retiredAt);
+      db.prepare('UPDATE master_keys SET retired_at = ? WHERE version = ?').run(retiredIso, version);
+      return mapMasterKey({ ...existing, retired_at: retiredIso });
     },
 
     async appendAudit(entry) {
@@ -1575,9 +1597,13 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
 
   const storage: Storage = {
     async createUser(input) {
-      await pool.query('INSERT INTO users (id, email) VALUES ($1, $2)', [input.id, input.email]);
-      const row = (await pool.query<UserRow>('SELECT * FROM users WHERE id = $1', [input.id])).rows[0];
-      if (!row) throw new Error('createUser: insert succeeded but row missing');
+      const row = (
+        await pool.query<UserRow>(
+          'INSERT INTO users (id, email) VALUES ($1, $2) RETURNING *',
+          [input.id, input.email],
+        )
+      ).rows[0];
+      if (!row) throw new Error('createUser: insert returned no row');
       return mapUser(row);
     },
     async getUserById(id) {
@@ -1590,14 +1616,13 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
     },
 
     async createApiToken(input) {
-      await pool.query(
-        'INSERT INTO api_tokens (id, user_id, name, token_hash, scopes) VALUES ($1, $2, $3, $4, $5)',
-        [input.id, input.userId, input.name, input.tokenHash, input.scopes],
-      );
       const row = (
-        await pool.query<ApiTokenRow>('SELECT * FROM api_tokens WHERE id = $1', [input.id])
+        await pool.query<ApiTokenRow>(
+          'INSERT INTO api_tokens (id, user_id, name, token_hash, scopes) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+          [input.id, input.userId, input.name, input.tokenHash, input.scopes],
+        )
       ).rows[0];
-      if (!row) throw new Error('createApiToken: insert succeeded but row missing');
+      if (!row) throw new Error('createApiToken: insert returned no row');
       return mapApiToken(row);
     },
     async getApiTokenByHash(tokenHash) {
@@ -1623,14 +1648,13 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
     },
 
     async createWorkspace(input) {
-      await pool.query(
-        'INSERT INTO workspaces (id, owner_user_id, name) VALUES ($1, $2, $3)',
-        [input.id, input.ownerUserId, input.name],
-      );
       const row = (
-        await pool.query<WorkspaceRow>('SELECT * FROM workspaces WHERE id = $1', [input.id])
+        await pool.query<WorkspaceRow>(
+          'INSERT INTO workspaces (id, owner_user_id, name) VALUES ($1, $2, $3) RETURNING *',
+          [input.id, input.ownerUserId, input.name],
+        )
       ).rows[0];
-      if (!row) throw new Error('createWorkspace: insert succeeded but row missing');
+      if (!row) throw new Error('createWorkspace: insert returned no row');
       return mapWorkspace(row);
     },
     async getWorkspace(id) {
@@ -1659,30 +1683,31 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
     },
 
     async createApp(input) {
-      await pool.query(
-        `INSERT INTO apps (
-          id, workspace_id, app_id_toss, display_title, client_id,
-          client_secret_hashes, mtls_cert_enc, mtls_key_enc, sealing_key_version,
-          allowed_origins, ownership_status, ownership_grace_until, raw_tokens_enabled
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [
-          input.id,
-          input.workspaceId,
-          input.appIdToss,
-          input.displayTitle,
-          input.clientId,
-          input.clientSecretHashes,
-          input.mtlsCertEnc,
-          input.mtlsKeyEnc,
-          input.sealingKeyVersion,
-          input.allowedOrigins,
-          input.ownershipStatus,
-          input.ownershipGraceUntil,
-          input.rawTokensEnabled,
-        ],
-      );
-      const row = (await pool.query<AppRow>('SELECT * FROM apps WHERE id = $1', [input.id])).rows[0];
-      if (!row) throw new Error('createApp: insert succeeded but row missing');
+      const row = (
+        await pool.query<AppRow>(
+          `INSERT INTO apps (
+            id, workspace_id, app_id_toss, display_title, client_id,
+            client_secret_hashes, mtls_cert_enc, mtls_key_enc, sealing_key_version,
+            allowed_origins, ownership_status, ownership_grace_until, raw_tokens_enabled
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+          [
+            input.id,
+            input.workspaceId,
+            input.appIdToss,
+            input.displayTitle,
+            input.clientId,
+            input.clientSecretHashes,
+            input.mtlsCertEnc,
+            input.mtlsKeyEnc,
+            input.sealingKeyVersion,
+            input.allowedOrigins,
+            input.ownershipStatus,
+            input.ownershipGraceUntil,
+            input.rawTokensEnabled,
+          ],
+        )
+      ).rows[0];
+      if (!row) throw new Error('createApp: insert returned no row');
       return mapApp(row);
     },
     async getApp(id) {
@@ -1758,14 +1783,13 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
     },
 
     async createUserSession(input) {
-      await pool.query(
-        'INSERT INTO user_sessions (id, user_id, expires_at) VALUES ($1, $2, $3)',
-        [input.id, input.userId, input.expiresAt],
-      );
       const row = (
-        await pool.query<UserSessionRow>('SELECT * FROM user_sessions WHERE id = $1', [input.id])
+        await pool.query<UserSessionRow>(
+          'INSERT INTO user_sessions (id, user_id, expires_at) VALUES ($1, $2, $3) RETURNING *',
+          [input.id, input.userId, input.expiresAt],
+        )
       ).rows[0];
-      if (!row) throw new Error('createUserSession: insert succeeded but row missing');
+      if (!row) throw new Error('createUserSession: insert returned no row');
       return mapSession(row);
     },
     async getUserSession(id) {
@@ -1779,14 +1803,13 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
     },
 
     async createMasterKey(input) {
-      await pool.query(
-        'INSERT INTO master_keys (id, version, provider_ref) VALUES ($1, $2, $3)',
-        [input.id, input.version, input.providerRef],
-      );
       const row = (
-        await pool.query<MasterKeyRow>('SELECT * FROM master_keys WHERE id = $1', [input.id])
+        await pool.query<MasterKeyRow>(
+          'INSERT INTO master_keys (id, version, provider_ref) VALUES ($1, $2, $3) RETURNING *',
+          [input.id, input.version, input.providerRef],
+        )
       ).rows[0];
-      if (!row) throw new Error('createMasterKey: insert succeeded but row missing');
+      if (!row) throw new Error('createMasterKey: insert returned no row');
       return mapMasterKey(row);
     },
     async getMasterKeyByVersion(version) {
@@ -1800,12 +1823,11 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
       return rows.map(mapMasterKey);
     },
     async retireMasterKey(version, retiredAt) {
-      await pool.query('UPDATE master_keys SET retired_at = $1 WHERE version = $2', [
-        retiredAt,
-        version,
-      ]);
       const row = (
-        await pool.query<MasterKeyRow>('SELECT * FROM master_keys WHERE version = $1', [version])
+        await pool.query<MasterKeyRow>(
+          'UPDATE master_keys SET retired_at = $1 WHERE version = $2 RETURNING *',
+          [retiredAt, version],
+        )
       ).rows[0];
       if (!row) throw new Error(`master_key version ${version} not found`);
       return mapMasterKey(row);

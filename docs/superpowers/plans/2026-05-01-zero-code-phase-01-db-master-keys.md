@@ -2,11 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the persistence layer (Postgres + SQLite) with the 7-table schema, and the `MasterKeyProvider` interface with env + file providers, HKDF-derived per-app sealing keys, and a 6-hour TTL cache. No HTTP surface yet — this phase is library code that subsequent phases call.
+**Goal:** Stand up the persistence layer (Postgres + SQLite) using **Drizzle ORM** with the 7-table schema, and the `MasterKeyProvider` interface with env + file providers, HKDF-derived per-app sealing keys, and a 6-hour TTL cache. No HTTP surface yet — this phase is library code that subsequent phases call.
 
-**Architecture:** A `Storage` interface covers the operations later phases need (insert/get/update/delete on each table). Postgres-default + SQLite-fallback drivers implement it. Migrations live as numbered SQL files under `src/storage/migrations/`. `MasterKeyProvider` is a tiny interface (`getKeyBytes(version): Promise<Buffer>`) with env/file implementations registered at startup; GCPSM is deferred to Phase 10. HKDF + sealing-key derivation are pure functions (no I/O) tested in isolation. The cache is a small TTL Map keyed by `version`.
+**Architecture:** A `Storage` interface covers the operations later phases need (insert/get/update/delete on each table). Two **hand-mirrored Drizzle schema files** (`schema.pg.ts` using `pgTable`, `schema.sqlite.ts` using `sqliteTable`) define the 7 tables once per dialect — Drizzle has no cross-dialect helper, so the storage-conformance test is what guarantees the mirror cannot drift silently. `drizzle-kit generate` produces per-dialect migration SQL that lives under `drizzle/pg/` and `drizzle/sqlite/` (committed to the repo). Postgres and SQLite drivers wrap Drizzle's per-dialect query builder — no hand-written SQL strings, no per-driver query duplication beyond the schema file. Domain types are **derived from the schema** via Drizzle's `$inferSelect`, so the interface, the schema, and the implementation cannot disagree about column shape. `MasterKeyProvider` is a tiny interface (`getKeyBytes(version): Promise<Buffer>`) with env/file implementations registered at startup; GCPSM is deferred to Phase 10. HKDF + sealing-key derivation are pure functions (no I/O) tested in isolation. The cache is a small TTL Map keyed by `version`.
 
-**Tech stack:** TypeScript ESM strict, `pg`, `better-sqlite3`, `node:crypto` (HKDF, AES-GCM), vitest. No new HTTP / runtime deps.
+**Bytes-at-the-boundary decision:** the `Storage` interface uses **`Uint8Array`** for byte columns (`mtlsCertEnc`, `mtlsKeyEnc`). Drizzle returns `Buffer` from both `bytea` (PG) and `blob({mode:'buffer'})` (SQLite); both drivers normalize the inferred row to `Uint8Array` at the mapping boundary. `Buffer` is a `Uint8Array` subclass, so `Buffer`-producing callers in later phases (`crypto.randomBytes()`, `fs.readFileSync()`) pass through unchanged. Picking `Uint8Array` keeps the interface portable across runtimes (Bun, Deno, browsers, Workers) and matches the spec §5.3 column-type table.
+
+**Tech stack:** TypeScript ESM strict, **`drizzle-orm`** + **`drizzle-kit`** (Drizzle ORM, current stable May 2026: `drizzle-orm@^0.45` / `drizzle-kit@^0.30`), `pg` (node-postgres adapter for Drizzle — chosen over `postgres-js` because the project already declares `pg`, the lock-file resolution stays small, and `pg.Pool` semantics are well-understood for connection management on Cloud Run), `better-sqlite3` (Drizzle's underlying SQLite driver), `node:crypto` (HKDF, AES-GCM), vitest. No new HTTP / runtime deps.
 
 ---
 
@@ -18,22 +20,27 @@ See [`2026-05-01-zero-code-mode-index.md`](./2026-05-01-zero-code-mode-index.md#
 - **No PII / secrets in logs.** Master key bytes never appear in any error or test output.
 - **Cloud-agnostic.** GCPSM is **not** added in this phase — only env + file providers.
 - **Self-host first-class.** SQLite path passes the same conformance suite as Postgres.
+- **Schema is the source of truth.** Domain types are inferred from `schema.pg.ts` via `$inferSelect`; no hand-maintained type duplication.
 
 ## Files touched in this phase
 
 **Created:**
 
-- `src/storage/types.ts` — domain types (Workspace, App, etc.).
+- `src/storage/schema.pg.ts` — Drizzle `pgTable` definitions for all 7 tables.
+- `src/storage/schema.sqlite.ts` — Drizzle `sqliteTable` mirror.
+- `src/storage/types.ts` — thin re-exports of `$inferSelect` types from `schema.pg.ts` (PG is canonical) plus the `AppOwnershipStatus` literal union and the storage-boundary normalized `AppRecord` type that uses `Uint8Array` for byte columns.
 - `src/storage/interface.ts` — `Storage` interface.
-- `src/storage/migrations/001_initial.sql` — Postgres schema.
-- `src/storage/migrations/001_initial.sqlite.sql` — SQLite schema.
-- `src/storage/migrate.ts` — migration runner (idempotent).
+- `src/storage/migrate.ts` — wraps `drizzle-orm/node-postgres/migrator` + `drizzle-orm/better-sqlite3/migrator`.
 - `src/storage/migrate.test.ts`
-- `src/storage/pg.ts` — Postgres driver.
+- `src/storage/pg.ts` — Postgres driver (Drizzle + `pg.Pool`).
 - `src/storage/pg.test.ts` — gated on `PG_TEST_URL` env.
-- `src/storage/sqlite.ts` — SQLite driver.
+- `src/storage/sqlite.ts` — SQLite driver (Drizzle + `better-sqlite3`).
 - `src/storage/sqlite.test.ts`
 - `src/storage/conformance.ts` — driver-agnostic test suite.
+- `drizzle.config.pg.ts` — drizzle-kit config for the PG dialect.
+- `drizzle.config.sqlite.ts` — drizzle-kit config for the SQLite dialect.
+- `drizzle/pg/0000_*.sql` + `drizzle/pg/meta/*` — generated PG migration artifacts.
+- `drizzle/sqlite/0000_*.sql` + `drizzle/sqlite/meta/*` — generated SQLite migration artifacts.
 - `src/master-keys/provider.ts` — `MasterKeyProvider` interface.
 - `src/master-keys/env-provider.ts`
 - `src/master-keys/env-provider.test.ts`
@@ -49,8 +56,9 @@ See [`2026-05-01-zero-code-mode-index.md`](./2026-05-01-zero-code-mode-index.md#
 
 **Modified:**
 
-- `package.json` — add `pg`, `@types/pg`, `better-sqlite3`, `@types/better-sqlite3`.
-- `tsconfig.json` — no change.
+- `package.json` — add `drizzle-orm`, `drizzle-kit`, ensure `pg` + `@types/pg` + `better-sqlite3` + `@types/better-sqlite3` resolve to current stable; add `db:generate:pg`, `db:generate:sqlite`, `db:migrate:pg`, `db:migrate:sqlite` scripts.
+- `tsconfig.json` — no change (drizzle.config files live at the project root and are picked up by the existing `include: ["src/**/*", "cli/**/*"]` only if used by tests; the configs themselves are run via `pnpm exec drizzle-kit`, which type-checks them in-process).
+- `.gitignore` — confirm `drizzle/` is **not** ignored (committed migration SQL is the source of record).
 
 ---
 
@@ -60,6 +68,7 @@ See [`2026-05-01-zero-code-mode-index.md`](./2026-05-01-zero-code-mode-index.md#
 pwd       # …/oidc-bridge-jwt-signature-verification
 git branch --show-current   # zero-code-mode
 git status                  # clean
+git log --oneline -3        # most recent should be the spec adoption + raw-driver squash marker
 ```
 
 If a Postgres-backed conformance run is desired locally:
@@ -78,34 +87,50 @@ Cleanup: `docker rm -f pg-zerocode-phase1`. CI sets `PG_TEST_URL` itself in Phas
 
 ---
 
-## Task 1: Add `pg` and `better-sqlite3` deps
+## Task 1: Add Drizzle ORM + driver deps
 
-We pick `pg` because it is the canonical Node Postgres driver with first-class types and works against any Postgres-compatible service (Cloud SQL, Supabase, RDS, self-host). We pick `better-sqlite3` because its synchronous API maps cleanly to migration runners and CLI bootstrap, and it is the de-facto Node SQLite. The async `node:sqlite` standard module is too new for production reliance in May 2026.
+Drizzle ORM gives us per-dialect query builders without hand-mirrored SQL strings. We pick `drizzle-orm`'s **node-postgres** adapter (over `postgres-js`) because the project already standardized on `pg`, `pg.Pool` semantics are well-understood for Cloud Run, and there is no measurable throughput gap at our load. We pick `better-sqlite3` because its synchronous API maps cleanly to migration runners and CLI bootstrap, and Drizzle treats it as a first-class adapter. The async `node:sqlite` standard module is too new for production reliance in May 2026.
 
 **Files:**
 - Modify: `package.json`
 - Modify: `pnpm-lock.yaml`
 
-- [ ] **Step 1: Install deps**
+- [ ] **Step 1: Install runtime deps**
 
 ```bash
-pnpm add pg@^8.13 better-sqlite3@^11
-pnpm add -D @types/pg @types/better-sqlite3
+pnpm add drizzle-orm@^0.45 pg@^8.20 better-sqlite3@^11
 ```
 
-- [ ] **Step 2: Verify**
+- [ ] **Step 2: Install dev deps**
 
 ```bash
-pnpm list pg better-sqlite3 --depth=0
+pnpm add -D drizzle-kit@^0.30 @types/pg@^8.20 @types/better-sqlite3@^7.6
 ```
 
-Expected: shows `pg 8.x` and `better-sqlite3 11.x` under dependencies.
+- [ ] **Step 3: Add npm scripts to `package.json`**
 
-- [ ] **Step 3: Commit**
+Inside the `"scripts"` block add:
+
+```json
+    "db:generate:pg": "drizzle-kit generate --config=drizzle.config.pg.ts",
+    "db:generate:sqlite": "drizzle-kit generate --config=drizzle.config.sqlite.ts",
+    "db:migrate:pg": "drizzle-kit migrate --config=drizzle.config.pg.ts",
+    "db:migrate:sqlite": "drizzle-kit migrate --config=drizzle.config.sqlite.ts"
+```
+
+- [ ] **Step 4: Verify**
+
+```bash
+pnpm list drizzle-orm drizzle-kit pg better-sqlite3 --depth=0
+```
+
+Expected: shows `drizzle-orm 0.45.x`, `drizzle-kit 0.30.x`, `pg 8.x`, `better-sqlite3 11.x`.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add package.json pnpm-lock.yaml
-git commit -m "chore: add pg + better-sqlite3 for Phase 1 storage"
+git commit -m "chore: add drizzle-orm + drizzle-kit + pg + better-sqlite3 for Phase 1 storage"
 ```
 
 ---
@@ -154,82 +179,385 @@ git commit -m "chore(vitest): pin config; isolate tests across processes"
 
 ---
 
-## Task 3: Domain types
+## Task 3: Drizzle Postgres schema (`schema.pg.ts`)
 
-These are the field-for-field shapes Phase 2+ will read/write. Defining them in one file keeps the storage interface readable.
+Postgres is the canonical dialect. Drizzle's `pgTable` builder produces schema objects that double as runtime query targets and TypeScript types. The schema is the source of truth — domain types in Task 5 are inferred from this file via `$inferSelect`.
+
+**Files:**
+- Create: `src/storage/schema.pg.ts`
+
+- [ ] **Step 1: Write the schema**
+
+```ts
+import { sql } from 'drizzle-orm';
+import {
+  boolean,
+  bytea,
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
+
+const tsCol = (name: string) =>
+  timestamp(name, { withTimezone: true, mode: 'date' });
+
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  createdAt: tsCol('created_at').notNull().defaultNow(),
+});
+
+export const apiTokens = pgTable(
+  'api_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    scopes: text('scopes').array().notNull().default(sql`'{}'::text[]`),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    lastUsedAt: tsCol('last_used_at'),
+  },
+  (t) => ({
+    userIdIdx: index('api_tokens_user_id_idx').on(t.userId),
+  }),
+);
+
+export const workspaces = pgTable(
+  'workspaces',
+  {
+    id: text('id').primaryKey(),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    ownerIdx: index('workspaces_owner_idx').on(t.ownerUserId),
+  }),
+);
+
+export const apps = pgTable(
+  'apps',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    appIdToss: text('app_id_toss').notNull(),
+    displayTitle: text('display_title').notNull(),
+    clientId: text('client_id').notNull().unique(),
+    clientSecretHashes: text('client_secret_hashes')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    mtlsCertEnc: bytea('mtls_cert_enc').notNull(),
+    mtlsKeyEnc: bytea('mtls_key_enc').notNull(),
+    sealingKeyVersion: integer('sealing_key_version').notNull(),
+    allowedOrigins: text('allowed_origins')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    ownershipStatus: text('ownership_status').notNull(),
+    ownershipGraceUntil: tsCol('ownership_grace_until'),
+    rawTokensEnabled: boolean('raw_tokens_enabled').notNull().default(false),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+    updatedAt: tsCol('updated_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    workspaceIdx: index('apps_workspace_idx').on(t.workspaceId),
+    workspaceAppIdTossUq: uniqueIndex('apps_workspace_app_id_toss_uq').on(
+      t.workspaceId,
+      t.appIdToss,
+    ),
+    ownershipChk: check(
+      'apps_ownership_status_chk',
+      sql`${t.ownershipStatus} IN ('pending','verified','lapsed')`,
+    ),
+  }),
+);
+
+export const userSessions = pgTable(
+  'user_sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: tsCol('expires_at').notNull(),
+    createdAt: tsCol('created_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('user_sessions_user_idx').on(t.userId),
+  }),
+);
+
+export const masterKeys = pgTable('master_keys', {
+  id: text('id').primaryKey(),
+  version: integer('version').notNull().unique(),
+  createdAt: tsCol('created_at').notNull().defaultNow(),
+  retiredAt: tsCol('retired_at'),
+  providerRef: text('provider_ref'),
+});
+
+export const auditLog = pgTable(
+  'audit_log',
+  {
+    id: text('id').primaryKey(),
+    ts: tsCol('ts').notNull().defaultNow(),
+    actor: text('actor').notNull(),
+    action: text('action').notNull(),
+    target: text('target').notNull(),
+    detailsJson: jsonb('details_json')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+  },
+  (t) => ({
+    tsIdx: index('audit_log_ts_idx').on(sql`${t.ts} DESC`),
+  }),
+);
+```
+
+- [ ] **Step 2: Run typecheck**
+
+```bash
+pnpm typecheck
+```
+
+Expected: no errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/storage/schema.pg.ts
+git commit -m "feat(storage): Drizzle pgTable schema for the 7-table model"
+```
+
+---
+
+## Task 4: Drizzle SQLite schema (`schema.sqlite.ts`)
+
+SQLite mirror. Per spec §5.3:
+- timestamps → `integer({mode:'timestamp_ms'})` (Drizzle returns `Date`, matches PG `timestamp({mode:'date'})`).
+- boolean → `integer({mode:'boolean'})`.
+- bytes → `blob({mode:'buffer'})`.
+- string array → `text({mode:'json'}).$type<string[]>()`.
+- jsonb → `text({mode:'json'}).$type<Record<string,unknown>>()`.
+
+**Files:**
+- Create: `src/storage/schema.sqlite.ts`
+
+- [ ] **Step 1: Write the schema**
+
+```ts
+import { sql } from 'drizzle-orm';
+import {
+  blob,
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
+
+const tsCol = (name: string) =>
+  integer(name, { mode: 'timestamp_ms' });
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
+});
+
+export const apiTokens = sqliteTable(
+  'api_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    scopes: text('scopes', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
+    lastUsedAt: tsCol('last_used_at'),
+  },
+  (t) => ({
+    userIdIdx: index('api_tokens_user_id_idx').on(t.userId),
+  }),
+);
+
+export const workspaces = sqliteTable(
+  'workspaces',
+  {
+    id: text('id').primaryKey(),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    ownerIdx: index('workspaces_owner_idx').on(t.ownerUserId),
+  }),
+);
+
+export const apps = sqliteTable(
+  'apps',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    appIdToss: text('app_id_toss').notNull(),
+    displayTitle: text('display_title').notNull(),
+    clientId: text('client_id').notNull().unique(),
+    clientSecretHashes: text('client_secret_hashes', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    mtlsCertEnc: blob('mtls_cert_enc', { mode: 'buffer' }).notNull(),
+    mtlsKeyEnc: blob('mtls_key_enc', { mode: 'buffer' }).notNull(),
+    sealingKeyVersion: integer('sealing_key_version').notNull(),
+    allowedOrigins: text('allowed_origins', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    ownershipStatus: text('ownership_status').notNull(),
+    ownershipGraceUntil: tsCol('ownership_grace_until'),
+    rawTokensEnabled: integer('raw_tokens_enabled', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: tsCol('updated_at').notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    workspaceIdx: index('apps_workspace_idx').on(t.workspaceId),
+    workspaceAppIdTossUq: uniqueIndex('apps_workspace_app_id_toss_uq').on(
+      t.workspaceId,
+      t.appIdToss,
+    ),
+    ownershipChk: check(
+      'apps_ownership_status_chk',
+      sql`${t.ownershipStatus} IN ('pending','verified','lapsed')`,
+    ),
+  }),
+);
+
+export const userSessions = sqliteTable(
+  'user_sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: tsCol('expires_at').notNull(),
+    createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    userIdx: index('user_sessions_user_idx').on(t.userId),
+  }),
+);
+
+export const masterKeys = sqliteTable('master_keys', {
+  id: text('id').primaryKey(),
+  version: integer('version').notNull().unique(),
+  createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
+  retiredAt: tsCol('retired_at'),
+  providerRef: text('provider_ref'),
+});
+
+export const auditLog = sqliteTable(
+  'audit_log',
+  {
+    id: text('id').primaryKey(),
+    ts: tsCol('ts').notNull().default(sql`(unixepoch() * 1000)`),
+    actor: text('actor').notNull(),
+    action: text('action').notNull(),
+    target: text('target').notNull(),
+    detailsJson: text('details_json', { mode: 'json' })
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'`),
+  },
+  (t) => ({
+    tsIdx: index('audit_log_ts_idx').on(sql`${t.ts} DESC`),
+  }),
+);
+```
+
+- [ ] **Step 2: Run typecheck**
+
+```bash
+pnpm typecheck
+```
+
+Expected: no errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/storage/schema.sqlite.ts
+git commit -m "feat(storage): Drizzle sqliteTable schema mirroring schema.pg.ts"
+```
+
+---
+
+## Task 5: Domain types from `$inferSelect`
+
+The schema is the source of truth. PG is canonical (it stores native bytes / arrays / jsonb), so we infer types from `schema.pg.ts`. The one transformation: `mtlsCertEnc` / `mtlsKeyEnc` come back from Drizzle as `Buffer`; the `Storage` interface boundary normalizes them to `Uint8Array` (see Architecture above). We define the boundary type `AppRecord` here.
 
 **Files:**
 - Create: `src/storage/types.ts`
 
-- [ ] **Step 1: Write `src/storage/types.ts`**
+- [ ] **Step 1: Write the types**
 
 ```ts
+import type {
+  apiTokens,
+  apps,
+  auditLog,
+  masterKeys,
+  userSessions,
+  users,
+  workspaces,
+} from './schema.pg.js';
+
 export type AppOwnershipStatus = 'pending' | 'verified' | 'lapsed';
 
-export interface User {
-  id: string;
-  email: string;
-  createdAt: Date;
-}
+export type User = typeof users.$inferSelect;
+export type ApiToken = typeof apiTokens.$inferSelect;
+export type Workspace = typeof workspaces.$inferSelect;
+export type UserSession = typeof userSessions.$inferSelect;
+export type MasterKeyMeta = typeof masterKeys.$inferSelect;
+export type AuditLogEntry = typeof auditLog.$inferSelect;
 
-export interface ApiToken {
-  id: string;
-  userId: string;
-  name: string;
-  tokenHash: string;
-  scopes: string[];
-  createdAt: Date;
-  lastUsedAt: Date | null;
-}
-
-export interface Workspace {
-  id: string;
-  ownerUserId: string;
-  name: string;
-  createdAt: Date;
-}
-
-export interface AppRecord {
-  id: string;
-  workspaceId: string;
-  appIdToss: string;
-  displayTitle: string;
-  clientId: string;
-  clientSecretHashes: string[];
-  mtlsCertEnc: Buffer;
-  mtlsKeyEnc: Buffer;
-  sealingKeyVersion: number;
-  allowedOrigins: string[];
+// Drizzle infers `mtls_cert_enc: Buffer` from `bytea`. We expose Uint8Array
+// at the Storage interface boundary (drivers normalize on the way out, accept
+// either Buffer or Uint8Array on the way in — Buffer extends Uint8Array, so
+// callers that pass Buffer work without a copy).
+type RawApp = typeof apps.$inferSelect;
+export type AppRecord = Omit<
+  RawApp,
+  'mtlsCertEnc' | 'mtlsKeyEnc' | 'ownershipStatus'
+> & {
+  mtlsCertEnc: Uint8Array;
+  mtlsKeyEnc: Uint8Array;
   ownershipStatus: AppOwnershipStatus;
-  ownershipGraceUntil: Date | null;
-  rawTokensEnabled: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface UserSession {
-  id: string;
-  userId: string;
-  expiresAt: Date;
-  createdAt: Date;
-}
-
-export interface MasterKeyMeta {
-  id: string;
-  version: number;
-  createdAt: Date;
-  retiredAt: Date | null;
-  providerRef: string | null;
-}
-
-export interface AuditLogEntry {
-  id: string;
-  ts: Date;
-  actor: string;
-  action: string;
-  target: string;
-  detailsJson: Record<string, unknown>;
-}
+};
 ```
 
 - [ ] **Step 2: Run typecheck**
@@ -244,219 +572,92 @@ Expected: no errors.
 
 ```bash
 git add src/storage/types.ts
-git commit -m "feat(storage): domain types for the 7-table schema"
+git commit -m "feat(storage): domain types derived from Drizzle \$inferSelect"
 ```
 
 ---
 
-## Task 4: Postgres migration SQL
+## Task 6: drizzle-kit configs + generated migrations
 
-`001_initial.sql` is the canonical Postgres schema. Self-host SQLite gets a parallel file (Task 5) — the conformance test suite enforces that both are kept in sync semantically.
+Two configs (one per dialect). Each emits its migrations under `drizzle/<dialect>/`. The output is committed: it is the source of record for what was applied.
 
 **Files:**
-- Create: `src/storage/migrations/001_initial.sql`
+- Create: `drizzle.config.pg.ts`
+- Create: `drizzle.config.sqlite.ts`
+- Create: `drizzle/pg/0000_*.sql` + `drizzle/pg/meta/_journal.json` + `drizzle/pg/meta/0000_snapshot.json` (generated)
+- Create: `drizzle/sqlite/0000_*.sql` + `drizzle/sqlite/meta/_journal.json` + `drizzle/sqlite/meta/0000_snapshot.json` (generated)
 
-- [ ] **Step 1: Write the SQL**
+- [ ] **Step 1: Write `drizzle.config.pg.ts`**
 
-```sql
--- 001_initial.sql — zero-code mode Phase 1 schema for Postgres.
--- Idempotent: every CREATE uses IF NOT EXISTS.
+```ts
+import { defineConfig } from 'drizzle-kit';
 
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  email TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS api_tokens (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  token_hash TEXT NOT NULL UNIQUE,
-  scopes TEXT[] NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  last_used_at TIMESTAMPTZ
-);
-CREATE INDEX IF NOT EXISTS api_tokens_user_id_idx ON api_tokens(user_id);
-
-CREATE TABLE IF NOT EXISTS workspaces (
-  id TEXT PRIMARY KEY,
-  owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS workspaces_owner_idx ON workspaces(owner_user_id);
-
-CREATE TABLE IF NOT EXISTS apps (
-  id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  app_id_toss TEXT NOT NULL,
-  display_title TEXT NOT NULL,
-  client_id TEXT NOT NULL UNIQUE,
-  client_secret_hashes TEXT[] NOT NULL DEFAULT '{}',
-  mtls_cert_enc BYTEA NOT NULL,
-  mtls_key_enc BYTEA NOT NULL,
-  sealing_key_version INTEGER NOT NULL,
-  allowed_origins TEXT[] NOT NULL DEFAULT '{}',
-  ownership_status TEXT NOT NULL CHECK (ownership_status IN ('pending','verified','lapsed')),
-  ownership_grace_until TIMESTAMPTZ,
-  raw_tokens_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(workspace_id, app_id_toss)
-);
-CREATE INDEX IF NOT EXISTS apps_workspace_idx ON apps(workspace_id);
-
-CREATE TABLE IF NOT EXISTS user_sessions (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS user_sessions_user_idx ON user_sessions(user_id);
-
-CREATE TABLE IF NOT EXISTS master_keys (
-  id TEXT PRIMARY KEY,
-  version INTEGER NOT NULL UNIQUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  retired_at TIMESTAMPTZ,
-  provider_ref TEXT
-);
-
-CREATE TABLE IF NOT EXISTS audit_log (
-  id TEXT PRIMARY KEY,
-  ts TIMESTAMPTZ NOT NULL DEFAULT now(),
-  actor TEXT NOT NULL,
-  action TEXT NOT NULL,
-  target TEXT NOT NULL,
-  details_json JSONB NOT NULL DEFAULT '{}'::jsonb
-);
-CREATE INDEX IF NOT EXISTS audit_log_ts_idx ON audit_log(ts DESC);
-
-CREATE TABLE IF NOT EXISTS schema_migrations (
-  filename TEXT PRIMARY KEY,
-  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './src/storage/schema.pg.ts',
+  out: './drizzle/pg',
+  // Connection is only needed for `drizzle-kit migrate`. Generation is offline.
+  dbCredentials: {
+    url: process.env.PG_DATABASE_URL ?? 'postgresql://localhost:5432/oidc_bridge',
+  },
+  strict: true,
+  verbose: true,
+});
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Write `drizzle.config.sqlite.ts`**
+
+```ts
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  dialect: 'sqlite',
+  schema: './src/storage/schema.sqlite.ts',
+  out: './drizzle/sqlite',
+  dbCredentials: {
+    url: process.env.SQLITE_PATH ?? './oidc-bridge.sqlite',
+  },
+  strict: true,
+  verbose: true,
+});
+```
+
+- [ ] **Step 3: Generate the PG migration**
 
 ```bash
-git add src/storage/migrations/001_initial.sql
-git commit -m "feat(storage): Postgres initial migration (7 tables + schema_migrations)"
+pnpm exec drizzle-kit generate --config=drizzle.config.pg.ts
+```
+
+Expected: writes `drizzle/pg/0000_<adjective>_<noun>.sql` plus `drizzle/pg/meta/_journal.json` and `drizzle/pg/meta/0000_snapshot.json`. Inspect the SQL: should contain `CREATE TABLE "users"`, `"api_tokens"`, ..., the `apps_ownership_status_chk` CHECK constraint, the unique index `apps_workspace_app_id_toss_uq`, and the four named indexes.
+
+- [ ] **Step 4: Generate the SQLite migration**
+
+```bash
+pnpm exec drizzle-kit generate --config=drizzle.config.sqlite.ts
+```
+
+Expected: writes `drizzle/sqlite/0000_<adjective>_<noun>.sql` plus matching `meta/` files.
+
+- [ ] **Step 5: Confirm `.gitignore` does NOT exclude `drizzle/`**
+
+```bash
+git check-ignore -v drizzle/pg/meta/_journal.json
+```
+
+Expected: nothing matched (exit code 1). If `drizzle/` is ignored, remove the rule from `.gitignore` before committing.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add drizzle.config.pg.ts drizzle.config.sqlite.ts drizzle/
+git commit -m "feat(storage): drizzle-kit configs + generated 0000 migrations (pg + sqlite)"
 ```
 
 ---
 
-## Task 5: SQLite mirror migration
+## Task 7: `Storage` interface
 
-SQLite differences from Postgres that matter:
-- No native array type → use JSON-encoded TEXT.
-- No `BYTEA` → `BLOB`.
-- No `JSONB` → `TEXT` (we serialize ourselves).
-- `TIMESTAMPTZ` → `TEXT` storing ISO-8601 UTC. SQLite has no real timestamp type.
-
-The SQLite driver's mapper layer (Task 8) handles serialization so the API surface in `Storage` is uniform.
-
-**Files:**
-- Create: `src/storage/migrations/001_initial.sqlite.sql`
-
-- [ ] **Step 1: Write the SQL**
-
-```sql
--- 001_initial.sqlite.sql — zero-code mode Phase 1 schema for SQLite.
--- TEXT[] → TEXT (JSON), BYTEA → BLOB, TIMESTAMPTZ → TEXT (ISO-8601 UTC).
--- The driver layer enforces the JSON shape and timestamp parsing.
-
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  email TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS api_tokens (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  token_hash TEXT NOT NULL UNIQUE,
-  scopes TEXT NOT NULL DEFAULT '[]',
-  created_at TEXT NOT NULL,
-  last_used_at TEXT
-);
-CREATE INDEX IF NOT EXISTS api_tokens_user_id_idx ON api_tokens(user_id);
-
-CREATE TABLE IF NOT EXISTS workspaces (
-  id TEXT PRIMARY KEY,
-  owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS workspaces_owner_idx ON workspaces(owner_user_id);
-
-CREATE TABLE IF NOT EXISTS apps (
-  id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  app_id_toss TEXT NOT NULL,
-  display_title TEXT NOT NULL,
-  client_id TEXT NOT NULL UNIQUE,
-  client_secret_hashes TEXT NOT NULL DEFAULT '[]',
-  mtls_cert_enc BLOB NOT NULL,
-  mtls_key_enc BLOB NOT NULL,
-  sealing_key_version INTEGER NOT NULL,
-  allowed_origins TEXT NOT NULL DEFAULT '[]',
-  ownership_status TEXT NOT NULL CHECK (ownership_status IN ('pending','verified','lapsed')),
-  ownership_grace_until TEXT,
-  raw_tokens_enabled INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE(workspace_id, app_id_toss)
-);
-CREATE INDEX IF NOT EXISTS apps_workspace_idx ON apps(workspace_id);
-
-CREATE TABLE IF NOT EXISTS user_sessions (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS user_sessions_user_idx ON user_sessions(user_id);
-
-CREATE TABLE IF NOT EXISTS master_keys (
-  id TEXT PRIMARY KEY,
-  version INTEGER NOT NULL UNIQUE,
-  created_at TEXT NOT NULL,
-  retired_at TEXT,
-  provider_ref TEXT
-);
-
-CREATE TABLE IF NOT EXISTS audit_log (
-  id TEXT PRIMARY KEY,
-  ts TEXT NOT NULL,
-  actor TEXT NOT NULL,
-  action TEXT NOT NULL,
-  target TEXT NOT NULL,
-  details_json TEXT NOT NULL DEFAULT '{}'
-);
-CREATE INDEX IF NOT EXISTS audit_log_ts_idx ON audit_log(ts DESC);
-
-CREATE TABLE IF NOT EXISTS schema_migrations (
-  filename TEXT PRIMARY KEY,
-  applied_at TEXT NOT NULL
-);
-```
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add src/storage/migrations/001_initial.sqlite.sql
-git commit -m "feat(storage): SQLite mirror migration"
-```
-
----
-
-## Task 6: `Storage` interface
-
-The interface is the contract every later phase imports. Methods are scoped to the operations actually needed by other phases. We do not add a method until a concrete caller exists — but we do add the full set the spec implies (so subsequent phase plans can reference them).
+The interface is the contract every later phase imports. Methods are scoped to the operations actually needed by other phases. We do not add a method until a concrete caller exists — but we do add the full set the spec implies (so subsequent phase plans can reference them). Both drivers implement this interface via their per-dialect Drizzle query builder.
 
 **Files:**
 - Create: `src/storage/interface.ts`
@@ -509,8 +710,8 @@ export interface Storage {
     displayTitle: string;
     clientId: string;
     clientSecretHashes: string[];
-    mtlsCertEnc: Buffer;
-    mtlsKeyEnc: Buffer;
+    mtlsCertEnc: Uint8Array;
+    mtlsKeyEnc: Uint8Array;
     sealingKeyVersion: number;
     allowedOrigins: string[];
     ownershipStatus: AppOwnershipStatus;
@@ -525,8 +726,8 @@ export interface Storage {
     patch: Partial<{
       displayTitle: string;
       clientSecretHashes: string[];
-      mtlsCertEnc: Buffer;
-      mtlsKeyEnc: Buffer;
+      mtlsCertEnc: Uint8Array;
+      mtlsKeyEnc: Uint8Array;
       sealingKeyVersion: number;
       allowedOrigins: string[];
       ownershipStatus: AppOwnershipStatus;
@@ -573,14 +774,14 @@ Expected: green.
 
 ```bash
 git add src/storage/interface.ts
-git commit -m "feat(storage): Storage interface covering all 7 tables"
+git commit -m "feat(storage): Storage interface; bytes are Uint8Array at the boundary"
 ```
 
 ---
 
-## Task 7: Migration runner
+## Task 8: Migration runner
 
-The runner reads SQL files from `migrations/` in lexicographic order, executes ones not in `schema_migrations`, and records them. Same file works for pg and sqlite — but the SQL filename rule is `<n>_<name>.sql` for pg and `<n>_<name>.sqlite.sql` for sqlite. The runner picks based on a flag.
+We delegate to Drizzle's per-dialect `migrate()` helpers. They read `meta/_journal.json` and apply only the migrations not already in `__drizzle_migrations` (Drizzle's bookkeeping table — replaces the prior `schema_migrations`).
 
 **Files:**
 - Create: `src/storage/migrate.ts`
@@ -595,6 +796,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runSqliteMigrations } from './migrate.js';
 
@@ -612,30 +814,34 @@ describe('runSqliteMigrations', () => {
   });
 
   it('applies all migrations on a fresh DB', () => {
-    const db = new Database(dbPath);
+    const sqlite = new Database(dbPath);
+    const db = drizzle(sqlite);
     runSqliteMigrations(db);
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[];
+    const tables = sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all() as { name: string }[];
     const names = tables.map((t) => t.name).filter((n) => !n.startsWith('sqlite_'));
-    expect(names).toEqual([
-      'api_tokens',
-      'apps',
-      'audit_log',
-      'master_keys',
-      'schema_migrations',
-      'user_sessions',
-      'users',
-      'workspaces',
-    ]);
-    db.close();
+    expect(names).toContain('users');
+    expect(names).toContain('api_tokens');
+    expect(names).toContain('workspaces');
+    expect(names).toContain('apps');
+    expect(names).toContain('user_sessions');
+    expect(names).toContain('master_keys');
+    expect(names).toContain('audit_log');
+    expect(names).toContain('__drizzle_migrations');
+    sqlite.close();
   });
 
   it('is idempotent', () => {
-    const db = new Database(dbPath);
+    const sqlite = new Database(dbPath);
+    const db = drizzle(sqlite);
     runSqliteMigrations(db);
     runSqliteMigrations(db);
-    const applied = db.prepare('SELECT filename FROM schema_migrations').all() as { filename: string }[];
-    expect(applied.map((r) => r.filename)).toEqual(['001_initial.sqlite.sql']);
-    db.close();
+    const applied = sqlite
+      .prepare('SELECT hash FROM __drizzle_migrations ORDER BY id')
+      .all() as { hash: string }[];
+    expect(applied).toHaveLength(1);
+    sqlite.close();
   });
 });
 ```
@@ -651,76 +857,22 @@ Expected: FAIL — `Cannot find module './migrate.js'`.
 - [ ] **Step 3: Implement `src/storage/migrate.ts`**
 
 ```ts
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type Database from 'better-sqlite3';
-import type { Pool } from 'pg';
+import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import { migrate as migrateSqlite } from 'drizzle-orm/better-sqlite3/migrator';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
 
-const MIGRATIONS_DIR = fileURLToPath(new URL('./migrations/', import.meta.url));
+// drizzle-kit emits to drizzle/<dialect>/ at the project root (a sibling of src/).
+const PG_FOLDER = fileURLToPath(new URL('../../drizzle/pg/', import.meta.url));
+const SQLITE_FOLDER = fileURLToPath(new URL('../../drizzle/sqlite/', import.meta.url));
 
-function listMigrations(suffix: string): string[] {
-  return readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(suffix))
-    .sort();
+export async function runPgMigrations(db: NodePgDatabase): Promise<void> {
+  await migratePg(db, { migrationsFolder: PG_FOLDER });
 }
 
-function readMigration(filename: string): string {
-  return readFileSync(join(MIGRATIONS_DIR, filename), 'utf8');
-}
-
-export function runSqliteMigrations(db: Database.Database): void {
-  db.exec(
-    `CREATE TABLE IF NOT EXISTS schema_migrations (
-       filename TEXT PRIMARY KEY,
-       applied_at TEXT NOT NULL
-     )`,
-  );
-  const applied = new Set(
-    (db.prepare('SELECT filename FROM schema_migrations').all() as { filename: string }[]).map(
-      (r) => r.filename,
-    ),
-  );
-  const files = listMigrations('.sqlite.sql');
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = readMigration(file);
-    db.transaction(() => {
-      db.exec(sql);
-      db.prepare('INSERT INTO schema_migrations (filename, applied_at) VALUES (?, ?)').run(
-        file,
-        new Date().toISOString(),
-      );
-    })();
-  }
-}
-
-export async function runPgMigrations(pool: Pool): Promise<void> {
-  await pool.query(
-    `CREATE TABLE IF NOT EXISTS schema_migrations (
-       filename TEXT PRIMARY KEY,
-       applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-     )`,
-  );
-  const { rows } = await pool.query<{ filename: string }>('SELECT filename FROM schema_migrations');
-  const applied = new Set(rows.map((r) => r.filename));
-  const files = listMigrations('.sql').filter((f) => !f.endsWith('.sqlite.sql'));
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = readMigration(file);
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(sql);
-      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
+export function runSqliteMigrations(db: BetterSQLite3Database): void {
+  migrateSqlite(db, { migrationsFolder: SQLITE_FOLDER });
 }
 ```
 
@@ -730,20 +882,26 @@ export async function runPgMigrations(pool: Pool): Promise<void> {
 pnpm test src/storage/migrate.test.ts
 ```
 
-Expected: PASS.
+Expected: PASS (2/2).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/storage/migrate.ts src/storage/migrate.test.ts
-git commit -m "feat(storage): migration runner for sqlite + pg"
+git commit -m "feat(storage): migration runner wrapping Drizzle migrators (pg + sqlite)"
 ```
 
 ---
 
-## Task 8: SQLite driver
+## Task 9: SQLite driver
 
-Single driver file. Synchronous `better-sqlite3` is wrapped in `async` returns to satisfy the `Storage` interface — there is no actual await needed, but the surface is uniform across drivers.
+Single driver file. Drizzle's `better-sqlite3` adapter is synchronous under the hood; we wrap operations in `async` to satisfy the `Storage` interface — uniform across drivers.
+
+Critical implementation rules (carry-forward from prior plan):
+- `retireMasterKey`: use `.returning()` + check the returned array; throw if empty. **Atomic in a single statement.**
+- All `create*` methods: use `.returning()` and return the row directly; no post-INSERT redundant SELECT.
+- Enforce `apps` count ≤ 1 at insert (spec §5.3 SQLite-only constraint): check `countApps()` before insert and throw if >= 1.
+- Buffer/Uint8Array normalization: Drizzle returns `Buffer` from `blob({mode:'buffer'})`; pass through directly (Buffer is a Uint8Array subclass).
 
 **Files:**
 - Create: `src/storage/sqlite.ts`
@@ -752,446 +910,282 @@ Single driver file. Synchronous `better-sqlite3` is wrapped in `async` returns t
 
 ```ts
 import Database from 'better-sqlite3';
-import { runSqliteMigrations } from './migrate.js';
+import { and, asc, count, desc, eq } from 'drizzle-orm';
+import { type BetterSQLite3Database, drizzle } from 'drizzle-orm/better-sqlite3';
 import type { Storage } from './interface.js';
+import { runSqliteMigrations } from './migrate.js';
+import * as s from './schema.sqlite.js';
 import type {
-  ApiToken,
   AppOwnershipStatus,
   AppRecord,
-  AuditLogEntry,
-  MasterKeyMeta,
-  User,
-  UserSession,
-  Workspace,
 } from './types.js';
 
-interface UserRow {
-  id: string;
-  email: string;
-  created_at: string;
-}
-
-interface ApiTokenRow {
-  id: string;
-  user_id: string;
-  name: string;
-  token_hash: string;
-  scopes: string;
-  created_at: string;
-  last_used_at: string | null;
-}
-
-interface WorkspaceRow {
-  id: string;
-  owner_user_id: string;
-  name: string;
-  created_at: string;
-}
-
-interface AppRow {
-  id: string;
-  workspace_id: string;
-  app_id_toss: string;
-  display_title: string;
-  client_id: string;
-  client_secret_hashes: string;
-  mtls_cert_enc: Buffer;
-  mtls_key_enc: Buffer;
-  sealing_key_version: number;
-  allowed_origins: string;
-  ownership_status: AppOwnershipStatus;
-  ownership_grace_until: string | null;
-  raw_tokens_enabled: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface UserSessionRow {
-  id: string;
-  user_id: string;
-  expires_at: string;
-  created_at: string;
-}
-
-interface MasterKeyRow {
-  id: string;
-  version: number;
-  created_at: string;
-  retired_at: string | null;
-  provider_ref: string | null;
-}
-
-interface AuditRow {
-  id: string;
-  ts: string;
-  actor: string;
-  action: string;
-  target: string;
-  details_json: string;
-}
-
-const iso = (d: Date): string => d.toISOString();
-const parseDate = (s: string): Date => new Date(s);
-const parseDateOrNull = (s: string | null): Date | null => (s ? new Date(s) : null);
-const toJson = (v: unknown): string => JSON.stringify(v);
-const fromJsonArray = (s: string): string[] => JSON.parse(s);
-const fromJsonObj = (s: string): Record<string, unknown> => JSON.parse(s);
-
-function mapUser(r: UserRow): User {
-  return { id: r.id, email: r.email, createdAt: parseDate(r.created_at) };
-}
-
-function mapApiToken(r: ApiTokenRow): ApiToken {
+function toAppRecord(row: typeof s.apps.$inferSelect): AppRecord {
   return {
-    id: r.id,
-    userId: r.user_id,
-    name: r.name,
-    tokenHash: r.token_hash,
-    scopes: fromJsonArray(r.scopes),
-    createdAt: parseDate(r.created_at),
-    lastUsedAt: parseDateOrNull(r.last_used_at),
+    id: row.id,
+    workspaceId: row.workspaceId,
+    appIdToss: row.appIdToss,
+    displayTitle: row.displayTitle,
+    clientId: row.clientId,
+    clientSecretHashes: row.clientSecretHashes,
+    mtlsCertEnc: new Uint8Array(row.mtlsCertEnc.buffer, row.mtlsCertEnc.byteOffset, row.mtlsCertEnc.byteLength),
+    mtlsKeyEnc: new Uint8Array(row.mtlsKeyEnc.buffer, row.mtlsKeyEnc.byteOffset, row.mtlsKeyEnc.byteLength),
+    sealingKeyVersion: row.sealingKeyVersion,
+    allowedOrigins: row.allowedOrigins,
+    ownershipStatus: row.ownershipStatus as AppOwnershipStatus,
+    ownershipGraceUntil: row.ownershipGraceUntil,
+    rawTokensEnabled: row.rawTokensEnabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
-function mapWorkspace(r: WorkspaceRow): Workspace {
-  return {
-    id: r.id,
-    ownerUserId: r.owner_user_id,
-    name: r.name,
-    createdAt: parseDate(r.created_at),
-  };
+function asBuffer(u: Uint8Array): Buffer {
+  return Buffer.isBuffer(u) ? u : Buffer.from(u.buffer, u.byteOffset, u.byteLength);
 }
 
-function mapApp(r: AppRow): AppRecord {
-  return {
-    id: r.id,
-    workspaceId: r.workspace_id,
-    appIdToss: r.app_id_toss,
-    displayTitle: r.display_title,
-    clientId: r.client_id,
-    clientSecretHashes: fromJsonArray(r.client_secret_hashes),
-    mtlsCertEnc: r.mtls_cert_enc,
-    mtlsKeyEnc: r.mtls_key_enc,
-    sealingKeyVersion: r.sealing_key_version,
-    allowedOrigins: fromJsonArray(r.allowed_origins),
-    ownershipStatus: r.ownership_status,
-    ownershipGraceUntil: parseDateOrNull(r.ownership_grace_until),
-    rawTokensEnabled: r.raw_tokens_enabled !== 0,
-    createdAt: parseDate(r.created_at),
-    updatedAt: parseDate(r.updated_at),
-  };
+export interface SqliteStorageOptions {
+  path: string;
 }
 
-function mapSession(r: UserSessionRow): UserSession {
-  return {
-    id: r.id,
-    userId: r.user_id,
-    expiresAt: parseDate(r.expires_at),
-    createdAt: parseDate(r.created_at),
-  };
-}
-
-function mapMasterKey(r: MasterKeyRow): MasterKeyMeta {
-  return {
-    id: r.id,
-    version: r.version,
-    createdAt: parseDate(r.created_at),
-    retiredAt: parseDateOrNull(r.retired_at),
-    providerRef: r.provider_ref,
-  };
-}
-
-function mapAudit(r: AuditRow): AuditLogEntry {
-  return {
-    id: r.id,
-    ts: parseDate(r.ts),
-    actor: r.actor,
-    action: r.action,
-    target: r.target,
-    detailsJson: fromJsonObj(r.details_json),
-  };
-}
-
-export function createSqliteStorage(opts: { path: string }): Storage {
-  const db = new Database(opts.path);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+export function createSqliteStorage(opts: SqliteStorageOptions): Storage {
+  const sqlite = new Database(opts.path);
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = ON');
+  const db: BetterSQLite3Database = drizzle(sqlite);
   runSqliteMigrations(db);
 
   const storage: Storage = {
     async createUser(input) {
-      const now = iso(new Date());
-      db.prepare('INSERT INTO users (id, email, created_at) VALUES (?, ?, ?)').run(
-        input.id,
-        input.email,
-        now,
-      );
-      return { id: input.id, email: input.email, createdAt: parseDate(now) };
+      const [row] = await db
+        .insert(s.users)
+        .values({ id: input.id, email: input.email })
+        .returning();
+      if (!row) throw new Error('createUser: insert returned no row');
+      return row;
     },
     async getUserById(id) {
-      const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow | undefined;
-      return row ? mapUser(row) : null;
+      const [row] = await db.select().from(s.users).where(eq(s.users.id, id));
+      return row ?? null;
     },
     async getUserByEmail(email) {
-      const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
-      return row ? mapUser(row) : null;
+      const [row] = await db.select().from(s.users).where(eq(s.users.email, email));
+      return row ?? null;
     },
 
     async createApiToken(input) {
-      const now = iso(new Date());
-      db.prepare(
-        'INSERT INTO api_tokens (id, user_id, name, token_hash, scopes, created_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, NULL)',
-      ).run(input.id, input.userId, input.name, input.tokenHash, toJson(input.scopes), now);
-      return {
-        id: input.id,
-        userId: input.userId,
-        name: input.name,
-        tokenHash: input.tokenHash,
-        scopes: input.scopes,
-        createdAt: parseDate(now),
-        lastUsedAt: null,
-      };
+      const [row] = await db
+        .insert(s.apiTokens)
+        .values({
+          id: input.id,
+          userId: input.userId,
+          name: input.name,
+          tokenHash: input.tokenHash,
+          scopes: input.scopes,
+        })
+        .returning();
+      if (!row) throw new Error('createApiToken: insert returned no row');
+      return row;
     },
     async getApiTokenByHash(tokenHash) {
-      const row = db.prepare('SELECT * FROM api_tokens WHERE token_hash = ?').get(tokenHash) as
-        | ApiTokenRow
-        | undefined;
-      return row ? mapApiToken(row) : null;
+      const [row] = await db
+        .select()
+        .from(s.apiTokens)
+        .where(eq(s.apiTokens.tokenHash, tokenHash));
+      return row ?? null;
     },
     async listApiTokensByUser(userId) {
-      const rows = db.prepare('SELECT * FROM api_tokens WHERE user_id = ? ORDER BY created_at').all(
-        userId,
-      ) as ApiTokenRow[];
-      return rows.map(mapApiToken);
+      return db
+        .select()
+        .from(s.apiTokens)
+        .where(eq(s.apiTokens.userId, userId))
+        .orderBy(asc(s.apiTokens.createdAt));
     },
     async deleteApiToken(id) {
-      db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id);
+      await db.delete(s.apiTokens).where(eq(s.apiTokens.id, id));
     },
     async touchApiTokenLastUsed(id, at) {
-      db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(iso(at), id);
+      await db.update(s.apiTokens).set({ lastUsedAt: at }).where(eq(s.apiTokens.id, id));
     },
 
     async createWorkspace(input) {
-      const now = iso(new Date());
-      db.prepare(
-        'INSERT INTO workspaces (id, owner_user_id, name, created_at) VALUES (?, ?, ?, ?)',
-      ).run(input.id, input.ownerUserId, input.name, now);
-      return {
-        id: input.id,
-        ownerUserId: input.ownerUserId,
-        name: input.name,
-        createdAt: parseDate(now),
-      };
+      const [row] = await db
+        .insert(s.workspaces)
+        .values({ id: input.id, ownerUserId: input.ownerUserId, name: input.name })
+        .returning();
+      if (!row) throw new Error('createWorkspace: insert returned no row');
+      return row;
     },
     async getWorkspace(id) {
-      const row = db.prepare('SELECT * FROM workspaces WHERE id = ?').get(id) as WorkspaceRow | undefined;
-      return row ? mapWorkspace(row) : null;
+      const [row] = await db.select().from(s.workspaces).where(eq(s.workspaces.id, id));
+      return row ?? null;
     },
     async listWorkspacesByOwner(ownerUserId) {
-      const rows = db
-        .prepare('SELECT * FROM workspaces WHERE owner_user_id = ? ORDER BY created_at')
-        .all(ownerUserId) as WorkspaceRow[];
-      return rows.map(mapWorkspace);
+      return db
+        .select()
+        .from(s.workspaces)
+        .where(eq(s.workspaces.ownerUserId, ownerUserId))
+        .orderBy(asc(s.workspaces.createdAt));
     },
     async updateWorkspace(id, patch) {
-      const existing = (await storage.getWorkspace(id)) ?? null;
-      if (!existing) throw new Error(`workspace ${id} not found`);
-      const name = patch.name ?? existing.name;
-      db.prepare('UPDATE workspaces SET name = ? WHERE id = ?').run(name, id);
-      return { ...existing, name };
+      const set: { name?: string } = {};
+      if (patch.name !== undefined) set.name = patch.name;
+      const [row] = await db
+        .update(s.workspaces)
+        .set(set)
+        .where(eq(s.workspaces.id, id))
+        .returning();
+      if (!row) throw new Error(`workspace ${id} not found`);
+      return row;
     },
     async deleteWorkspace(id) {
-      db.prepare('DELETE FROM workspaces WHERE id = ?').run(id);
+      await db.delete(s.workspaces).where(eq(s.workspaces.id, id));
     },
 
     async createApp(input) {
-      const nowDate = new Date();
-      const now = iso(nowDate);
-      db.prepare(
-        `INSERT INTO apps (
-          id, workspace_id, app_id_toss, display_title, client_id,
-          client_secret_hashes, mtls_cert_enc, mtls_key_enc, sealing_key_version,
-          allowed_origins, ownership_status, ownership_grace_until,
-          raw_tokens_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        input.id,
-        input.workspaceId,
-        input.appIdToss,
-        input.displayTitle,
-        input.clientId,
-        toJson(input.clientSecretHashes),
-        input.mtlsCertEnc,
-        input.mtlsKeyEnc,
-        input.sealingKeyVersion,
-        toJson(input.allowedOrigins),
-        input.ownershipStatus,
-        input.ownershipGraceUntil ? iso(input.ownershipGraceUntil) : null,
-        input.rawTokensEnabled ? 1 : 0,
-        now,
-        now,
-      );
-      return {
-        id: input.id,
-        workspaceId: input.workspaceId,
-        appIdToss: input.appIdToss,
-        displayTitle: input.displayTitle,
-        clientId: input.clientId,
-        clientSecretHashes: input.clientSecretHashes,
-        mtlsCertEnc: input.mtlsCertEnc,
-        mtlsKeyEnc: input.mtlsKeyEnc,
-        sealingKeyVersion: input.sealingKeyVersion,
-        allowedOrigins: input.allowedOrigins,
-        ownershipStatus: input.ownershipStatus,
-        ownershipGraceUntil: input.ownershipGraceUntil,
-        rawTokensEnabled: input.rawTokensEnabled,
-        createdAt: nowDate,
-        updatedAt: nowDate,
-      };
+      // SQLite is the ≤1-app-row dialect (spec §5.3).
+      const existing = await storage.countApps();
+      if (existing >= 1) {
+        throw new Error('SQLite storage allows at most 1 app row (spec §5.3)');
+      }
+      const now = new Date();
+      const [row] = await db
+        .insert(s.apps)
+        .values({
+          id: input.id,
+          workspaceId: input.workspaceId,
+          appIdToss: input.appIdToss,
+          displayTitle: input.displayTitle,
+          clientId: input.clientId,
+          clientSecretHashes: input.clientSecretHashes,
+          mtlsCertEnc: asBuffer(input.mtlsCertEnc),
+          mtlsKeyEnc: asBuffer(input.mtlsKeyEnc),
+          sealingKeyVersion: input.sealingKeyVersion,
+          allowedOrigins: input.allowedOrigins,
+          ownershipStatus: input.ownershipStatus,
+          ownershipGraceUntil: input.ownershipGraceUntil,
+          rawTokensEnabled: input.rawTokensEnabled,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      if (!row) throw new Error('createApp: insert returned no row');
+      return toAppRecord(row);
     },
     async getApp(id) {
-      const row = db.prepare('SELECT * FROM apps WHERE id = ?').get(id) as AppRow | undefined;
-      return row ? mapApp(row) : null;
+      const [row] = await db.select().from(s.apps).where(eq(s.apps.id, id));
+      return row ? toAppRecord(row) : null;
     },
     async getAppByClientId(clientId) {
-      const row = db.prepare('SELECT * FROM apps WHERE client_id = ?').get(clientId) as
-        | AppRow
-        | undefined;
-      return row ? mapApp(row) : null;
+      const [row] = await db.select().from(s.apps).where(eq(s.apps.clientId, clientId));
+      return row ? toAppRecord(row) : null;
     },
     async listAppsByWorkspace(workspaceId) {
-      const rows = db
-        .prepare('SELECT * FROM apps WHERE workspace_id = ? ORDER BY created_at')
-        .all(workspaceId) as AppRow[];
-      return rows.map(mapApp);
+      const rows = await db
+        .select()
+        .from(s.apps)
+        .where(eq(s.apps.workspaceId, workspaceId))
+        .orderBy(asc(s.apps.createdAt));
+      return rows.map(toAppRecord);
     },
     async updateApp(id, patch) {
-      const existing = await storage.getApp(id);
-      if (!existing) throw new Error(`app ${id} not found`);
-      const next: AppRecord = {
-        ...existing,
-        ...(patch.displayTitle !== undefined ? { displayTitle: patch.displayTitle } : {}),
-        ...(patch.clientSecretHashes !== undefined
-          ? { clientSecretHashes: patch.clientSecretHashes }
-          : {}),
-        ...(patch.mtlsCertEnc !== undefined ? { mtlsCertEnc: patch.mtlsCertEnc } : {}),
-        ...(patch.mtlsKeyEnc !== undefined ? { mtlsKeyEnc: patch.mtlsKeyEnc } : {}),
-        ...(patch.sealingKeyVersion !== undefined
-          ? { sealingKeyVersion: patch.sealingKeyVersion }
-          : {}),
-        ...(patch.allowedOrigins !== undefined ? { allowedOrigins: patch.allowedOrigins } : {}),
-        ...(patch.ownershipStatus !== undefined ? { ownershipStatus: patch.ownershipStatus } : {}),
-        ...(patch.ownershipGraceUntil !== undefined
-          ? { ownershipGraceUntil: patch.ownershipGraceUntil }
-          : {}),
-        ...(patch.rawTokensEnabled !== undefined
-          ? { rawTokensEnabled: patch.rawTokensEnabled }
-          : {}),
-        updatedAt: new Date(),
-      };
-      db.prepare(
-        `UPDATE apps SET
-          display_title = ?, client_secret_hashes = ?, mtls_cert_enc = ?, mtls_key_enc = ?,
-          sealing_key_version = ?, allowed_origins = ?, ownership_status = ?,
-          ownership_grace_until = ?, raw_tokens_enabled = ?, updated_at = ?
-         WHERE id = ?`,
-      ).run(
-        next.displayTitle,
-        toJson(next.clientSecretHashes),
-        next.mtlsCertEnc,
-        next.mtlsKeyEnc,
-        next.sealingKeyVersion,
-        toJson(next.allowedOrigins),
-        next.ownershipStatus,
-        next.ownershipGraceUntil ? iso(next.ownershipGraceUntil) : null,
-        next.rawTokensEnabled ? 1 : 0,
-        iso(next.updatedAt),
-        id,
-      );
-      return next;
+      const set: Partial<typeof s.apps.$inferInsert> = { updatedAt: new Date() };
+      if (patch.displayTitle !== undefined) set.displayTitle = patch.displayTitle;
+      if (patch.clientSecretHashes !== undefined) set.clientSecretHashes = patch.clientSecretHashes;
+      if (patch.mtlsCertEnc !== undefined) set.mtlsCertEnc = asBuffer(patch.mtlsCertEnc);
+      if (patch.mtlsKeyEnc !== undefined) set.mtlsKeyEnc = asBuffer(patch.mtlsKeyEnc);
+      if (patch.sealingKeyVersion !== undefined) set.sealingKeyVersion = patch.sealingKeyVersion;
+      if (patch.allowedOrigins !== undefined) set.allowedOrigins = patch.allowedOrigins;
+      if (patch.ownershipStatus !== undefined) set.ownershipStatus = patch.ownershipStatus;
+      if (patch.ownershipGraceUntil !== undefined) set.ownershipGraceUntil = patch.ownershipGraceUntil;
+      if (patch.rawTokensEnabled !== undefined) set.rawTokensEnabled = patch.rawTokensEnabled;
+
+      const [row] = await db
+        .update(s.apps)
+        .set(set)
+        .where(eq(s.apps.id, id))
+        .returning();
+      if (!row) throw new Error(`app ${id} not found`);
+      return toAppRecord(row);
     },
     async deleteApp(id) {
-      db.prepare('DELETE FROM apps WHERE id = ?').run(id);
+      await db.delete(s.apps).where(eq(s.apps.id, id));
     },
     async countApps() {
-      const row = db.prepare('SELECT COUNT(*) AS c FROM apps').get() as { c: number };
-      return row.c;
+      const [r] = await db.select({ c: count() }).from(s.apps);
+      return r?.c ?? 0;
     },
 
     async createUserSession(input) {
-      const now = iso(new Date());
-      db.prepare(
-        'INSERT INTO user_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)',
-      ).run(input.id, input.userId, iso(input.expiresAt), now);
-      return {
-        id: input.id,
-        userId: input.userId,
-        expiresAt: input.expiresAt,
-        createdAt: parseDate(now),
-      };
+      const [row] = await db
+        .insert(s.userSessions)
+        .values({ id: input.id, userId: input.userId, expiresAt: input.expiresAt })
+        .returning();
+      if (!row) throw new Error('createUserSession: insert returned no row');
+      return row;
     },
     async getUserSession(id) {
-      const row = db.prepare('SELECT * FROM user_sessions WHERE id = ?').get(id) as
-        | UserSessionRow
-        | undefined;
-      return row ? mapSession(row) : null;
+      const [row] = await db.select().from(s.userSessions).where(eq(s.userSessions.id, id));
+      return row ?? null;
     },
     async deleteUserSession(id) {
-      db.prepare('DELETE FROM user_sessions WHERE id = ?').run(id);
+      await db.delete(s.userSessions).where(eq(s.userSessions.id, id));
     },
 
     async createMasterKey(input) {
-      const nowDate = new Date();
-      const now = iso(nowDate);
-      db.prepare(
-        'INSERT INTO master_keys (id, version, created_at, retired_at, provider_ref) VALUES (?, ?, ?, NULL, ?)',
-      ).run(input.id, input.version, now, input.providerRef);
-      return {
-        id: input.id,
-        version: input.version,
-        createdAt: nowDate,
-        retiredAt: null,
-        providerRef: input.providerRef,
-      };
+      const [row] = await db
+        .insert(s.masterKeys)
+        .values({ id: input.id, version: input.version, providerRef: input.providerRef })
+        .returning();
+      if (!row) throw new Error('createMasterKey: insert returned no row');
+      return row;
     },
     async getMasterKeyByVersion(version) {
-      const row = db.prepare('SELECT * FROM master_keys WHERE version = ?').get(version) as
-        | MasterKeyRow
-        | undefined;
-      return row ? mapMasterKey(row) : null;
+      const [row] = await db
+        .select()
+        .from(s.masterKeys)
+        .where(eq(s.masterKeys.version, version));
+      return row ?? null;
     },
     async listMasterKeys() {
-      const rows = db.prepare('SELECT * FROM master_keys ORDER BY version').all() as MasterKeyRow[];
-      return rows.map(mapMasterKey);
+      return db.select().from(s.masterKeys).orderBy(asc(s.masterKeys.version));
     },
     async retireMasterKey(version, retiredAt) {
-      const existing = db.prepare('SELECT * FROM master_keys WHERE version = ?').get(version) as
-        | MasterKeyRow
-        | undefined;
-      if (!existing) throw new Error(`master_key version ${version} not found`);
-      const retiredIso = iso(retiredAt);
-      db.prepare('UPDATE master_keys SET retired_at = ? WHERE version = ?').run(retiredIso, version);
-      return mapMasterKey({ ...existing, retired_at: retiredIso });
+      // Atomic single-statement update + return; throw if no row matched.
+      const [row] = await db
+        .update(s.masterKeys)
+        .set({ retiredAt })
+        .where(eq(s.masterKeys.version, version))
+        .returning();
+      if (!row) throw new Error(`master_key version ${version} not found`);
+      return row;
     },
 
     async appendAudit(entry) {
-      const ts = iso(entry.ts ?? new Date());
-      db.prepare(
-        'INSERT INTO audit_log (id, ts, actor, action, target, details_json) VALUES (?, ?, ?, ?, ?, ?)',
-      ).run(entry.id, ts, entry.actor, entry.action, entry.target, toJson(entry.detailsJson));
+      await db.insert(s.auditLog).values({
+        id: entry.id,
+        ts: entry.ts ?? new Date(),
+        actor: entry.actor,
+        action: entry.action,
+        target: entry.target,
+        detailsJson: entry.detailsJson,
+      });
     },
     async listAudit(options) {
       const limit = options?.limit ?? 100;
-      const rows = db.prepare('SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?').all(limit) as AuditRow[];
-      return rows.map(mapAudit);
+      return db.select().from(s.auditLog).orderBy(desc(s.auditLog.ts)).limit(limit);
     },
 
     async close() {
-      db.close();
+      sqlite.close();
     },
   };
 
   return storage;
+
+  // Suppress "and" import unused-var false positive: the symbol is reserved
+  // for upcoming compound predicates in later phases.
+  void and;
 }
 ```
 
@@ -1207,14 +1201,14 @@ Expected: green.
 
 ```bash
 git add src/storage/sqlite.ts
-git commit -m "feat(storage): SQLite driver implementing Storage interface"
+git commit -m "feat(storage): SQLite driver via Drizzle implementing Storage"
 ```
 
 ---
 
-## Task 9: Storage conformance test suite
+## Task 10: Storage conformance test suite
 
-A single test factory takes a `() => Promise<Storage>` and runs the full CRUD matrix. Both pg and sqlite drivers reuse it. Phase 1 only invokes it from the sqlite test file; pg test file (Task 11) reuses the same factory.
+A single test factory takes a `() => Promise<Storage>` and runs the full CRUD matrix, exercising every method with assertions sensitive to type round-trip: `Date` in/out, byte arrays in/out, string-array round-trip, JSON object round-trip, boolean round-trip. This is the load-bearing schema-drift detector.
 
 **Files:**
 - Create: `src/storage/conformance.ts`
@@ -1247,15 +1241,16 @@ export function runStorageConformance(name: string, factory: ConformanceFactory)
       await factory.cleanup(storage);
     });
 
-    it('users: create + getById + getByEmail', async () => {
+    it('users: create + getById + getByEmail; Date round-trips', async () => {
       const u = await storage.createUser({ id: 'u_1', email: 'a@b.c' });
       expect(u.email).toBe('a@b.c');
+      expect(u.createdAt).toBeInstanceOf(Date);
       expect(await storage.getUserById('u_1')).toMatchObject({ email: 'a@b.c' });
       expect(await storage.getUserByEmail('a@b.c')).toMatchObject({ id: 'u_1' });
       expect(await storage.getUserById('nope')).toBeNull();
     });
 
-    it('api tokens: full lifecycle + scopes roundtrip + last-used', async () => {
+    it('api tokens: scopes round-trip + last-used Date precision', async () => {
       await storage.createUser({ id: 'u_1', email: 'a@b.c' });
       const t = await storage.createApiToken({
         id: 't_1',
@@ -1268,17 +1263,20 @@ export function runStorageConformance(name: string, factory: ConformanceFactory)
       expect(t.lastUsedAt).toBeNull();
       const fetched = await storage.getApiTokenByHash('h1');
       expect(fetched?.scopes).toEqual(['admin', 'read']);
-      const at = new Date('2026-05-01T12:00:00Z');
+
+      const at = new Date('2026-05-01T12:00:00.000Z');
       await storage.touchApiTokenLastUsed('t_1', at);
       const after = await storage.getApiTokenByHash('h1');
+      expect(after?.lastUsedAt).toBeInstanceOf(Date);
       expect(after?.lastUsedAt?.toISOString()).toBe(at.toISOString());
+
       const list = await storage.listApiTokensByUser('u_1');
       expect(list).toHaveLength(1);
       await storage.deleteApiToken('t_1');
       expect(await storage.getApiTokenByHash('h1')).toBeNull();
     });
 
-    it('workspaces: create, update name, list by owner, delete', async () => {
+    it('workspaces: create, update name, list, delete', async () => {
       await storage.createUser({ id: 'u_1', email: 'a@b.c' });
       const w = await storage.createWorkspace({ id: 'w_1', ownerUserId: 'u_1', name: 'first' });
       expect(w.name).toBe('first');
@@ -1290,27 +1288,37 @@ export function runStorageConformance(name: string, factory: ConformanceFactory)
       expect(await storage.getWorkspace('w_1')).toBeNull();
     });
 
-    it('apps: full lifecycle, partial update, count', async () => {
+    it('apps: bytes / arrays / boolean / Date all round-trip', async () => {
       await storage.createUser({ id: 'u_1', email: 'a@b.c' });
       await storage.createWorkspace({ id: 'w_1', ownerUserId: 'u_1', name: 'first' });
+
+      const certBytes = new Uint8Array([1, 2, 3, 4, 0xff, 0x00, 0xab]);
+      const keyBytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+      const grace = new Date('2026-05-04T00:00:00.000Z');
+
       const a = await storage.createApp({
         id: 'a_1',
         workspaceId: 'w_1',
         appIdToss: 'mini-app-123',
         displayTitle: 'My App',
         clientId: 'client_xyz',
-        clientSecretHashes: ['$2a$12$abc'],
-        mtlsCertEnc: Buffer.from('cert-bytes'),
-        mtlsKeyEnc: Buffer.from('key-bytes'),
+        clientSecretHashes: ['$2a$12$abc', '$2a$12$def'],
+        mtlsCertEnc: certBytes,
+        mtlsKeyEnc: keyBytes,
         sealingKeyVersion: 1,
-        allowedOrigins: ['https://app.example.com'],
+        allowedOrigins: ['https://app.example.com', 'https://www.example.com'],
         ownershipStatus: 'pending',
-        ownershipGraceUntil: new Date('2026-05-04T00:00:00Z'),
+        ownershipGraceUntil: grace,
         rawTokensEnabled: false,
       });
-      expect(a.allowedOrigins).toEqual(['https://app.example.com']);
-      expect(a.mtlsCertEnc.toString()).toBe('cert-bytes');
+      expect(a.allowedOrigins).toEqual(['https://app.example.com', 'https://www.example.com']);
+      expect(a.clientSecretHashes).toEqual(['$2a$12$abc', '$2a$12$def']);
+      expect(Array.from(a.mtlsCertEnc)).toEqual(Array.from(certBytes));
+      expect(Array.from(a.mtlsKeyEnc)).toEqual(Array.from(keyBytes));
       expect(a.rawTokensEnabled).toBe(false);
+      expect(a.ownershipGraceUntil).toBeInstanceOf(Date);
+      expect(a.ownershipGraceUntil?.toISOString()).toBe(grace.toISOString());
+      expect(a.createdAt).toBeInstanceOf(Date);
 
       const byClient = await storage.getAppByClientId('client_xyz');
       expect(byClient?.id).toBe('a_1');
@@ -1332,42 +1340,50 @@ export function runStorageConformance(name: string, factory: ConformanceFactory)
       expect(await storage.getApp('a_1')).toBeNull();
     });
 
-    it('user sessions: create, get, delete', async () => {
+    it('user sessions: Date round-trip preserves millisecond precision', async () => {
       await storage.createUser({ id: 'u_1', email: 'a@b.c' });
+      const exp = new Date('2026-05-02T01:23:45.678Z');
       const s = await storage.createUserSession({
         id: 's_1',
         userId: 'u_1',
-        expiresAt: new Date('2026-05-02T00:00:00Z'),
+        expiresAt: exp,
       });
       expect(s.userId).toBe('u_1');
       const f = await storage.getUserSession('s_1');
-      expect(f?.expiresAt.toISOString()).toBe('2026-05-02T00:00:00.000Z');
+      expect(f?.expiresAt).toBeInstanceOf(Date);
+      expect(f?.expiresAt.toISOString()).toBe(exp.toISOString());
       await storage.deleteUserSession('s_1');
       expect(await storage.getUserSession('s_1')).toBeNull();
     });
 
-    it('master keys: create, list ordering, retire', async () => {
+    it('master keys: create, list ordering, retire is atomic + throws on missing', async () => {
       const m1 = await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
       expect(m1.retiredAt).toBeNull();
       await storage.createMasterKey({ id: 'mk_2', version: 2, providerRef: 'env:2' });
       const list = await storage.listMasterKeys();
       expect(list.map((m) => m.version)).toEqual([1, 2]);
-      const retired = await storage.retireMasterKey(1, new Date('2026-05-01T00:00:00Z'));
-      expect(retired.retiredAt?.toISOString()).toBe('2026-05-01T00:00:00.000Z');
+
+      const retiredAt = new Date('2026-05-01T00:00:00.000Z');
+      const retired = await storage.retireMasterKey(1, retiredAt);
+      expect(retired.retiredAt).toBeInstanceOf(Date);
+      expect(retired.retiredAt?.toISOString()).toBe(retiredAt.toISOString());
+
       const fetched = await storage.getMasterKeyByVersion(1);
       expect(fetched?.retiredAt).not.toBeNull();
+
+      await expect(storage.retireMasterKey(99, retiredAt)).rejects.toThrow(/version 99/);
     });
 
-    it('audit log: append + list-newest-first + limit', async () => {
-      const ts1 = new Date('2026-05-01T10:00:00Z');
-      const ts2 = new Date('2026-05-01T11:00:00Z');
+    it('audit log: JSON object round-trip + newest-first ordering + limit', async () => {
+      const ts1 = new Date('2026-05-01T10:00:00.000Z');
+      const ts2 = new Date('2026-05-01T11:00:00.000Z');
       await storage.appendAudit({
         id: 'au_1',
         ts: ts1,
         actor: 'u_1',
         action: 'app.create',
         target: 'a_1',
-        detailsJson: { foo: 'bar' },
+        detailsJson: { foo: 'bar', count: 7, nested: { ok: true } },
       });
       await storage.appendAudit({
         id: 'au_2',
@@ -1379,10 +1395,20 @@ export function runStorageConformance(name: string, factory: ConformanceFactory)
       });
       const all = await storage.listAudit();
       expect(all.map((e) => e.id)).toEqual(['au_2', 'au_1']);
+      expect(all[1]!.detailsJson).toEqual({ foo: 'bar', count: 7, nested: { ok: true } });
       expect(all[0]!.detailsJson).toEqual({ reason: 'cleanup' });
       const limited = await storage.listAudit({ limit: 1 });
       expect(limited).toHaveLength(1);
       expect(limited[0]!.id).toBe('au_2');
+    });
+
+    it('cross-dialect Date precision: persisted Date equals input Date by ISO string', async () => {
+      await storage.createUser({ id: 'u_dt', email: 'dt@x.y' });
+      // Choose a non-rounded ms boundary.
+      const exp = new Date('2026-12-31T23:59:59.123Z');
+      await storage.createUserSession({ id: 's_dt', userId: 'u_dt', expiresAt: exp });
+      const back = await storage.getUserSession('s_dt');
+      expect(back?.expiresAt.toISOString()).toBe(exp.toISOString());
     });
   });
 }
@@ -1433,9 +1459,9 @@ git commit -m "feat(storage): conformance suite + SQLite driver passes it"
 
 ---
 
-## Task 10: Postgres driver
+## Task 11: Postgres driver
 
-Same surface as the SQLite driver, using `pg.Pool` for connections. Postgres handles arrays and timestamps natively, so the mapping layer is thinner.
+Same surface as the SQLite driver, using `pg.Pool` wrapped by Drizzle's `node-postgres` adapter. Postgres handles arrays / timestamps / jsonb / bytea natively, so the only normalization is `Buffer → Uint8Array` at the boundary (matching the spec §5.3 column-type table).
 
 **Files:**
 - Create: `src/storage/pg.ts`
@@ -1443,147 +1469,39 @@ Same surface as the SQLite driver, using `pg.Pool` for connections. Postgres han
 - [ ] **Step 1: Write `src/storage/pg.ts`**
 
 ```ts
+import { asc, count, desc, eq } from 'drizzle-orm';
+import { type NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres';
 import { Pool, type PoolConfig } from 'pg';
-import { runPgMigrations } from './migrate.js';
 import type { Storage } from './interface.js';
+import { runPgMigrations } from './migrate.js';
+import * as s from './schema.pg.js';
 import type {
-  ApiToken,
   AppOwnershipStatus,
   AppRecord,
-  AuditLogEntry,
-  MasterKeyMeta,
-  User,
-  UserSession,
-  Workspace,
 } from './types.js';
 
-interface UserRow {
-  id: string;
-  email: string;
-  created_at: Date;
-}
-
-interface ApiTokenRow {
-  id: string;
-  user_id: string;
-  name: string;
-  token_hash: string;
-  scopes: string[];
-  created_at: Date;
-  last_used_at: Date | null;
-}
-
-interface WorkspaceRow {
-  id: string;
-  owner_user_id: string;
-  name: string;
-  created_at: Date;
-}
-
-interface AppRow {
-  id: string;
-  workspace_id: string;
-  app_id_toss: string;
-  display_title: string;
-  client_id: string;
-  client_secret_hashes: string[];
-  mtls_cert_enc: Buffer;
-  mtls_key_enc: Buffer;
-  sealing_key_version: number;
-  allowed_origins: string[];
-  ownership_status: AppOwnershipStatus;
-  ownership_grace_until: Date | null;
-  raw_tokens_enabled: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
-
-interface UserSessionRow {
-  id: string;
-  user_id: string;
-  expires_at: Date;
-  created_at: Date;
-}
-
-interface MasterKeyRow {
-  id: string;
-  version: number;
-  created_at: Date;
-  retired_at: Date | null;
-  provider_ref: string | null;
-}
-
-interface AuditRow {
-  id: string;
-  ts: Date;
-  actor: string;
-  action: string;
-  target: string;
-  details_json: Record<string, unknown>;
-}
-
-function mapUser(r: UserRow): User {
-  return { id: r.id, email: r.email, createdAt: r.created_at };
-}
-function mapApiToken(r: ApiTokenRow): ApiToken {
+function toAppRecord(row: typeof s.apps.$inferSelect): AppRecord {
   return {
-    id: r.id,
-    userId: r.user_id,
-    name: r.name,
-    tokenHash: r.token_hash,
-    scopes: r.scopes,
-    createdAt: r.created_at,
-    lastUsedAt: r.last_used_at,
+    id: row.id,
+    workspaceId: row.workspaceId,
+    appIdToss: row.appIdToss,
+    displayTitle: row.displayTitle,
+    clientId: row.clientId,
+    clientSecretHashes: row.clientSecretHashes,
+    mtlsCertEnc: new Uint8Array(row.mtlsCertEnc.buffer, row.mtlsCertEnc.byteOffset, row.mtlsCertEnc.byteLength),
+    mtlsKeyEnc: new Uint8Array(row.mtlsKeyEnc.buffer, row.mtlsKeyEnc.byteOffset, row.mtlsKeyEnc.byteLength),
+    sealingKeyVersion: row.sealingKeyVersion,
+    allowedOrigins: row.allowedOrigins,
+    ownershipStatus: row.ownershipStatus as AppOwnershipStatus,
+    ownershipGraceUntil: row.ownershipGraceUntil,
+    rawTokensEnabled: row.rawTokensEnabled,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
-function mapWorkspace(r: WorkspaceRow): Workspace {
-  return { id: r.id, ownerUserId: r.owner_user_id, name: r.name, createdAt: r.created_at };
-}
-function mapApp(r: AppRow): AppRecord {
-  return {
-    id: r.id,
-    workspaceId: r.workspace_id,
-    appIdToss: r.app_id_toss,
-    displayTitle: r.display_title,
-    clientId: r.client_id,
-    clientSecretHashes: r.client_secret_hashes,
-    mtlsCertEnc: r.mtls_cert_enc,
-    mtlsKeyEnc: r.mtls_key_enc,
-    sealingKeyVersion: r.sealing_key_version,
-    allowedOrigins: r.allowed_origins,
-    ownershipStatus: r.ownership_status,
-    ownershipGraceUntil: r.ownership_grace_until,
-    rawTokensEnabled: r.raw_tokens_enabled,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}
-function mapSession(r: UserSessionRow): UserSession {
-  return {
-    id: r.id,
-    userId: r.user_id,
-    expiresAt: r.expires_at,
-    createdAt: r.created_at,
-  };
-}
-function mapMasterKey(r: MasterKeyRow): MasterKeyMeta {
-  return {
-    id: r.id,
-    version: r.version,
-    createdAt: r.created_at,
-    retiredAt: r.retired_at,
-    providerRef: r.provider_ref,
-  };
-}
-function mapAudit(r: AuditRow): AuditLogEntry {
-  return {
-    id: r.id,
-    ts: r.ts,
-    actor: r.actor,
-    action: r.action,
-    target: r.target,
-    detailsJson: r.details_json,
-  };
+
+function asBuffer(u: Uint8Array): Buffer {
+  return Buffer.isBuffer(u) ? u : Buffer.from(u.buffer, u.byteOffset, u.byteLength);
 }
 
 export interface PgStorageOptions {
@@ -1593,259 +1511,223 @@ export interface PgStorageOptions {
 
 export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> {
   const pool = new Pool({ connectionString: opts.connectionString, ...opts.poolConfig });
-  await runPgMigrations(pool);
+  const db: NodePgDatabase = drizzle(pool);
+  await runPgMigrations(db);
 
   const storage: Storage = {
     async createUser(input) {
-      const row = (
-        await pool.query<UserRow>(
-          'INSERT INTO users (id, email) VALUES ($1, $2) RETURNING *',
-          [input.id, input.email],
-        )
-      ).rows[0];
+      const [row] = await db
+        .insert(s.users)
+        .values({ id: input.id, email: input.email })
+        .returning();
       if (!row) throw new Error('createUser: insert returned no row');
-      return mapUser(row);
+      return row;
     },
     async getUserById(id) {
-      const row = (await pool.query<UserRow>('SELECT * FROM users WHERE id = $1', [id])).rows[0];
-      return row ? mapUser(row) : null;
+      const [row] = await db.select().from(s.users).where(eq(s.users.id, id));
+      return row ?? null;
     },
     async getUserByEmail(email) {
-      const row = (await pool.query<UserRow>('SELECT * FROM users WHERE email = $1', [email])).rows[0];
-      return row ? mapUser(row) : null;
+      const [row] = await db.select().from(s.users).where(eq(s.users.email, email));
+      return row ?? null;
     },
 
     async createApiToken(input) {
-      const row = (
-        await pool.query<ApiTokenRow>(
-          'INSERT INTO api_tokens (id, user_id, name, token_hash, scopes) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-          [input.id, input.userId, input.name, input.tokenHash, input.scopes],
-        )
-      ).rows[0];
+      const [row] = await db
+        .insert(s.apiTokens)
+        .values({
+          id: input.id,
+          userId: input.userId,
+          name: input.name,
+          tokenHash: input.tokenHash,
+          scopes: input.scopes,
+        })
+        .returning();
       if (!row) throw new Error('createApiToken: insert returned no row');
-      return mapApiToken(row);
+      return row;
     },
     async getApiTokenByHash(tokenHash) {
-      const row = (
-        await pool.query<ApiTokenRow>('SELECT * FROM api_tokens WHERE token_hash = $1', [tokenHash])
-      ).rows[0];
-      return row ? mapApiToken(row) : null;
+      const [row] = await db
+        .select()
+        .from(s.apiTokens)
+        .where(eq(s.apiTokens.tokenHash, tokenHash));
+      return row ?? null;
     },
     async listApiTokensByUser(userId) {
-      const rows = (
-        await pool.query<ApiTokenRow>(
-          'SELECT * FROM api_tokens WHERE user_id = $1 ORDER BY created_at',
-          [userId],
-        )
-      ).rows;
-      return rows.map(mapApiToken);
+      return db
+        .select()
+        .from(s.apiTokens)
+        .where(eq(s.apiTokens.userId, userId))
+        .orderBy(asc(s.apiTokens.createdAt));
     },
     async deleteApiToken(id) {
-      await pool.query('DELETE FROM api_tokens WHERE id = $1', [id]);
+      await db.delete(s.apiTokens).where(eq(s.apiTokens.id, id));
     },
     async touchApiTokenLastUsed(id, at) {
-      await pool.query('UPDATE api_tokens SET last_used_at = $1 WHERE id = $2', [at, id]);
+      await db.update(s.apiTokens).set({ lastUsedAt: at }).where(eq(s.apiTokens.id, id));
     },
 
     async createWorkspace(input) {
-      const row = (
-        await pool.query<WorkspaceRow>(
-          'INSERT INTO workspaces (id, owner_user_id, name) VALUES ($1, $2, $3) RETURNING *',
-          [input.id, input.ownerUserId, input.name],
-        )
-      ).rows[0];
+      const [row] = await db
+        .insert(s.workspaces)
+        .values({ id: input.id, ownerUserId: input.ownerUserId, name: input.name })
+        .returning();
       if (!row) throw new Error('createWorkspace: insert returned no row');
-      return mapWorkspace(row);
+      return row;
     },
     async getWorkspace(id) {
-      const row = (await pool.query<WorkspaceRow>('SELECT * FROM workspaces WHERE id = $1', [id]))
-        .rows[0];
-      return row ? mapWorkspace(row) : null;
+      const [row] = await db.select().from(s.workspaces).where(eq(s.workspaces.id, id));
+      return row ?? null;
     },
     async listWorkspacesByOwner(ownerUserId) {
-      const rows = (
-        await pool.query<WorkspaceRow>(
-          'SELECT * FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at',
-          [ownerUserId],
-        )
-      ).rows;
-      return rows.map(mapWorkspace);
+      return db
+        .select()
+        .from(s.workspaces)
+        .where(eq(s.workspaces.ownerUserId, ownerUserId))
+        .orderBy(asc(s.workspaces.createdAt));
     },
     async updateWorkspace(id, patch) {
-      const existing = await storage.getWorkspace(id);
-      if (!existing) throw new Error(`workspace ${id} not found`);
-      const name = patch.name ?? existing.name;
-      await pool.query('UPDATE workspaces SET name = $1 WHERE id = $2', [name, id]);
-      return { ...existing, name };
+      const set: { name?: string } = {};
+      if (patch.name !== undefined) set.name = patch.name;
+      const [row] = await db
+        .update(s.workspaces)
+        .set(set)
+        .where(eq(s.workspaces.id, id))
+        .returning();
+      if (!row) throw new Error(`workspace ${id} not found`);
+      return row;
     },
     async deleteWorkspace(id) {
-      await pool.query('DELETE FROM workspaces WHERE id = $1', [id]);
+      await db.delete(s.workspaces).where(eq(s.workspaces.id, id));
     },
 
     async createApp(input) {
-      const row = (
-        await pool.query<AppRow>(
-          `INSERT INTO apps (
-            id, workspace_id, app_id_toss, display_title, client_id,
-            client_secret_hashes, mtls_cert_enc, mtls_key_enc, sealing_key_version,
-            allowed_origins, ownership_status, ownership_grace_until, raw_tokens_enabled
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-          [
-            input.id,
-            input.workspaceId,
-            input.appIdToss,
-            input.displayTitle,
-            input.clientId,
-            input.clientSecretHashes,
-            input.mtlsCertEnc,
-            input.mtlsKeyEnc,
-            input.sealingKeyVersion,
-            input.allowedOrigins,
-            input.ownershipStatus,
-            input.ownershipGraceUntil,
-            input.rawTokensEnabled,
-          ],
-        )
-      ).rows[0];
+      const now = new Date();
+      const [row] = await db
+        .insert(s.apps)
+        .values({
+          id: input.id,
+          workspaceId: input.workspaceId,
+          appIdToss: input.appIdToss,
+          displayTitle: input.displayTitle,
+          clientId: input.clientId,
+          clientSecretHashes: input.clientSecretHashes,
+          mtlsCertEnc: asBuffer(input.mtlsCertEnc),
+          mtlsKeyEnc: asBuffer(input.mtlsKeyEnc),
+          sealingKeyVersion: input.sealingKeyVersion,
+          allowedOrigins: input.allowedOrigins,
+          ownershipStatus: input.ownershipStatus,
+          ownershipGraceUntil: input.ownershipGraceUntil,
+          rawTokensEnabled: input.rawTokensEnabled,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
       if (!row) throw new Error('createApp: insert returned no row');
-      return mapApp(row);
+      return toAppRecord(row);
     },
     async getApp(id) {
-      const row = (await pool.query<AppRow>('SELECT * FROM apps WHERE id = $1', [id])).rows[0];
-      return row ? mapApp(row) : null;
+      const [row] = await db.select().from(s.apps).where(eq(s.apps.id, id));
+      return row ? toAppRecord(row) : null;
     },
     async getAppByClientId(clientId) {
-      const row = (await pool.query<AppRow>('SELECT * FROM apps WHERE client_id = $1', [clientId]))
-        .rows[0];
-      return row ? mapApp(row) : null;
+      const [row] = await db.select().from(s.apps).where(eq(s.apps.clientId, clientId));
+      return row ? toAppRecord(row) : null;
     },
     async listAppsByWorkspace(workspaceId) {
-      const rows = (
-        await pool.query<AppRow>(
-          'SELECT * FROM apps WHERE workspace_id = $1 ORDER BY created_at',
-          [workspaceId],
-        )
-      ).rows;
-      return rows.map(mapApp);
+      const rows = await db
+        .select()
+        .from(s.apps)
+        .where(eq(s.apps.workspaceId, workspaceId))
+        .orderBy(asc(s.apps.createdAt));
+      return rows.map(toAppRecord);
     },
     async updateApp(id, patch) {
-      const existing = await storage.getApp(id);
-      if (!existing) throw new Error(`app ${id} not found`);
-      const next: AppRecord = {
-        ...existing,
-        ...(patch.displayTitle !== undefined ? { displayTitle: patch.displayTitle } : {}),
-        ...(patch.clientSecretHashes !== undefined
-          ? { clientSecretHashes: patch.clientSecretHashes }
-          : {}),
-        ...(patch.mtlsCertEnc !== undefined ? { mtlsCertEnc: patch.mtlsCertEnc } : {}),
-        ...(patch.mtlsKeyEnc !== undefined ? { mtlsKeyEnc: patch.mtlsKeyEnc } : {}),
-        ...(patch.sealingKeyVersion !== undefined
-          ? { sealingKeyVersion: patch.sealingKeyVersion }
-          : {}),
-        ...(patch.allowedOrigins !== undefined ? { allowedOrigins: patch.allowedOrigins } : {}),
-        ...(patch.ownershipStatus !== undefined ? { ownershipStatus: patch.ownershipStatus } : {}),
-        ...(patch.ownershipGraceUntil !== undefined
-          ? { ownershipGraceUntil: patch.ownershipGraceUntil }
-          : {}),
-        ...(patch.rawTokensEnabled !== undefined
-          ? { rawTokensEnabled: patch.rawTokensEnabled }
-          : {}),
-        updatedAt: new Date(),
-      };
-      await pool.query(
-        `UPDATE apps SET
-           display_title = $1, client_secret_hashes = $2, mtls_cert_enc = $3, mtls_key_enc = $4,
-           sealing_key_version = $5, allowed_origins = $6, ownership_status = $7,
-           ownership_grace_until = $8, raw_tokens_enabled = $9, updated_at = $10
-         WHERE id = $11`,
-        [
-          next.displayTitle,
-          next.clientSecretHashes,
-          next.mtlsCertEnc,
-          next.mtlsKeyEnc,
-          next.sealingKeyVersion,
-          next.allowedOrigins,
-          next.ownershipStatus,
-          next.ownershipGraceUntil,
-          next.rawTokensEnabled,
-          next.updatedAt,
-          id,
-        ],
-      );
-      return next;
+      const set: Partial<typeof s.apps.$inferInsert> = { updatedAt: new Date() };
+      if (patch.displayTitle !== undefined) set.displayTitle = patch.displayTitle;
+      if (patch.clientSecretHashes !== undefined) set.clientSecretHashes = patch.clientSecretHashes;
+      if (patch.mtlsCertEnc !== undefined) set.mtlsCertEnc = asBuffer(patch.mtlsCertEnc);
+      if (patch.mtlsKeyEnc !== undefined) set.mtlsKeyEnc = asBuffer(patch.mtlsKeyEnc);
+      if (patch.sealingKeyVersion !== undefined) set.sealingKeyVersion = patch.sealingKeyVersion;
+      if (patch.allowedOrigins !== undefined) set.allowedOrigins = patch.allowedOrigins;
+      if (patch.ownershipStatus !== undefined) set.ownershipStatus = patch.ownershipStatus;
+      if (patch.ownershipGraceUntil !== undefined) set.ownershipGraceUntil = patch.ownershipGraceUntil;
+      if (patch.rawTokensEnabled !== undefined) set.rawTokensEnabled = patch.rawTokensEnabled;
+
+      const [row] = await db
+        .update(s.apps)
+        .set(set)
+        .where(eq(s.apps.id, id))
+        .returning();
+      if (!row) throw new Error(`app ${id} not found`);
+      return toAppRecord(row);
     },
     async deleteApp(id) {
-      await pool.query('DELETE FROM apps WHERE id = $1', [id]);
+      await db.delete(s.apps).where(eq(s.apps.id, id));
     },
     async countApps() {
-      const row = (await pool.query<{ c: string }>('SELECT COUNT(*)::text AS c FROM apps')).rows[0];
-      return Number(row?.c ?? 0);
+      const [r] = await db.select({ c: count() }).from(s.apps);
+      return Number(r?.c ?? 0);
     },
 
     async createUserSession(input) {
-      const row = (
-        await pool.query<UserSessionRow>(
-          'INSERT INTO user_sessions (id, user_id, expires_at) VALUES ($1, $2, $3) RETURNING *',
-          [input.id, input.userId, input.expiresAt],
-        )
-      ).rows[0];
+      const [row] = await db
+        .insert(s.userSessions)
+        .values({ id: input.id, userId: input.userId, expiresAt: input.expiresAt })
+        .returning();
       if (!row) throw new Error('createUserSession: insert returned no row');
-      return mapSession(row);
+      return row;
     },
     async getUserSession(id) {
-      const row = (
-        await pool.query<UserSessionRow>('SELECT * FROM user_sessions WHERE id = $1', [id])
-      ).rows[0];
-      return row ? mapSession(row) : null;
+      const [row] = await db.select().from(s.userSessions).where(eq(s.userSessions.id, id));
+      return row ?? null;
     },
     async deleteUserSession(id) {
-      await pool.query('DELETE FROM user_sessions WHERE id = $1', [id]);
+      await db.delete(s.userSessions).where(eq(s.userSessions.id, id));
     },
 
     async createMasterKey(input) {
-      const row = (
-        await pool.query<MasterKeyRow>(
-          'INSERT INTO master_keys (id, version, provider_ref) VALUES ($1, $2, $3) RETURNING *',
-          [input.id, input.version, input.providerRef],
-        )
-      ).rows[0];
+      const [row] = await db
+        .insert(s.masterKeys)
+        .values({ id: input.id, version: input.version, providerRef: input.providerRef })
+        .returning();
       if (!row) throw new Error('createMasterKey: insert returned no row');
-      return mapMasterKey(row);
+      return row;
     },
     async getMasterKeyByVersion(version) {
-      const row = (
-        await pool.query<MasterKeyRow>('SELECT * FROM master_keys WHERE version = $1', [version])
-      ).rows[0];
-      return row ? mapMasterKey(row) : null;
+      const [row] = await db
+        .select()
+        .from(s.masterKeys)
+        .where(eq(s.masterKeys.version, version));
+      return row ?? null;
     },
     async listMasterKeys() {
-      const rows = (await pool.query<MasterKeyRow>('SELECT * FROM master_keys ORDER BY version')).rows;
-      return rows.map(mapMasterKey);
+      return db.select().from(s.masterKeys).orderBy(asc(s.masterKeys.version));
     },
     async retireMasterKey(version, retiredAt) {
-      const row = (
-        await pool.query<MasterKeyRow>(
-          'UPDATE master_keys SET retired_at = $1 WHERE version = $2 RETURNING *',
-          [retiredAt, version],
-        )
-      ).rows[0];
+      // Atomic single-statement update + return; throw if no row matched.
+      const [row] = await db
+        .update(s.masterKeys)
+        .set({ retiredAt })
+        .where(eq(s.masterKeys.version, version))
+        .returning();
       if (!row) throw new Error(`master_key version ${version} not found`);
-      return mapMasterKey(row);
+      return row;
     },
 
     async appendAudit(entry) {
-      const ts = entry.ts ?? new Date();
-      await pool.query(
-        'INSERT INTO audit_log (id, ts, actor, action, target, details_json) VALUES ($1,$2,$3,$4,$5,$6)',
-        [entry.id, ts, entry.actor, entry.action, entry.target, entry.detailsJson],
-      );
+      await db.insert(s.auditLog).values({
+        id: entry.id,
+        ts: entry.ts ?? new Date(),
+        actor: entry.actor,
+        action: entry.action,
+        target: entry.target,
+        detailsJson: entry.detailsJson,
+      });
     },
     async listAudit(options) {
       const limit = options?.limit ?? 100;
-      const rows = (
-        await pool.query<AuditRow>('SELECT * FROM audit_log ORDER BY ts DESC LIMIT $1', [limit])
-      ).rows;
-      return rows.map(mapAudit);
+      return db.select().from(s.auditLog).orderBy(desc(s.auditLog.ts)).limit(limit);
     },
 
     async close() {
@@ -1869,60 +1751,55 @@ Expected: green.
 
 ```bash
 git add src/storage/pg.ts
-git commit -m "feat(storage): Postgres driver implementing Storage interface"
+git commit -m "feat(storage): Postgres driver via Drizzle implementing Storage"
 ```
 
 ---
 
-## Task 11: Postgres conformance test (gated on `PG_TEST_URL`)
+## Task 12: Postgres conformance test (gated on `PG_TEST_URL`)
 
-The pg test file imports the same `runStorageConformance` factory and `describe.skip`s the suite when `PG_TEST_URL` is unset (so local CI without Docker still passes). When set, each test gets its own schema namespace via `pg_temp` is not enough — schemas don't auto-clean — so we wipe the tables between tests instead.
+The pg test file imports the same `runStorageConformance` factory and `describe.skip`s the suite when `PG_TEST_URL` is unset (so local CI without Docker still passes). When set, each test gets a freshly-truncated DB.
 
 **Files:**
 - Create: `src/storage/pg.test.ts`
+- Modify: `.github/workflows/ci.yml`
 
 - [ ] **Step 1: Write the test**
 
 ```ts
+import { Pool } from 'pg';
 import { describe } from 'vitest';
-import { createPgStorage } from './pg.js';
 import { runStorageConformance } from './conformance.js';
-import type { Storage } from './interface.js';
+import { createPgStorage } from './pg.js';
 
 const url = process.env.PG_TEST_URL;
 
 if (!url) {
   describe.skip('Storage conformance — pg (PG_TEST_URL not set)', () => {});
 } else {
-  let openedStorage: Storage | null = null;
   runStorageConformance('pg', {
     async open() {
-      const s = await createPgStorage({ connectionString: url });
-      openedStorage = s;
-      return s;
+      // Truncate before each open to give the conformance suite an empty DB.
+      const pool = new Pool({ connectionString: url });
+      try {
+        // Apply migrations once so the tables exist; the driver will re-run idempotently.
+        const { drizzle } = await import('drizzle-orm/node-postgres');
+        const { runPgMigrations } = await import('./migrate.js');
+        await runPgMigrations(drizzle(pool));
+        await pool.query(
+          'TRUNCATE TABLE audit_log, master_keys, user_sessions, apps, workspaces, api_tokens, users RESTART IDENTITY CASCADE',
+        );
+      } finally {
+        await pool.end();
+      }
+      return createPgStorage({ connectionString: url });
     },
     async cleanup(s) {
-      const truncate = async (table: string): Promise<void> => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const anyS = s as any;
-        await anyS._pool?.query?.(`TRUNCATE TABLE ${table} CASCADE`);
-      };
-      // We did not expose _pool — fallback: open a one-off pg client for cleanup.
-      const { Pool } = await import('pg');
-      const pool = new Pool({ connectionString: url });
-      await pool.query(
-        'TRUNCATE TABLE audit_log, master_keys, user_sessions, apps, workspaces, api_tokens, users RESTART IDENTITY CASCADE',
-      );
-      await pool.end();
       await s.close();
-      openedStorage = null;
-      void truncate;
     },
   });
 }
 ```
-
-The test uses a per-suite truncate against the same DB, so the conformance suite's "fresh DB per test" expectation holds.
 
 - [ ] **Step 2: Run the suite locally if Docker is available**
 
@@ -1987,7 +1864,7 @@ git commit -m "feat(storage): Postgres conformance test + CI postgres service"
 
 ---
 
-## Task 12: HKDF + sealing-key derivation
+## Task 13: HKDF + sealing-key derivation
 
 Pure function. Given `masterKeyBytes` and `appId`, produce a 32-byte sealing key. We use Node's built-in HKDF (`crypto.hkdfSync`) — no extra dep.
 
@@ -2092,7 +1969,7 @@ git commit -m "feat(master-keys): HKDF-based per-app sealing key derivation"
 
 ---
 
-## Task 13: `MasterKeyProvider` interface
+## Task 14: `MasterKeyProvider` interface
 
 The interface is two methods: `getKeyBytes(version)` and `listVersions()`. Implementations are env, file, gcpsm (later). The interface lives in `provider.ts`.
 
@@ -2119,7 +1996,7 @@ git commit -m "feat(master-keys): MasterKeyProvider interface"
 
 ---
 
-## Task 14: Env provider
+## Task 15: Env provider
 
 Reads `MASTER_KEY_<version>_HEX` env vars at startup. Versions are discovered by scanning env keys matching the pattern.
 
@@ -2232,8 +2109,8 @@ export function createEnvMasterKeyProvider(opts: EnvProviderOptions = {}): Maste
   };
 }
 
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 ```
 
@@ -2254,7 +2131,7 @@ git commit -m "feat(master-keys): env-backed MasterKeyProvider"
 
 ---
 
-## Task 15: File provider
+## Task 16: File provider
 
 Reads `${dir}/v<version>.key` files. Files contain raw bytes (not hex). Permissions warning if file is world-readable.
 
@@ -2414,7 +2291,7 @@ git commit -m "feat(master-keys): file-backed MasterKeyProvider with perm warnin
 
 ---
 
-## Task 16: 6-hour TTL cache wrapper
+## Task 17: 6-hour TTL cache wrapper
 
 Wraps any `MasterKeyProvider` and memoizes `getKeyBytes(version)` for `ttlMs` (default 6h). `listVersions` is **not** cached — version discovery is rare and we want freshness when ops add a key.
 
@@ -2431,7 +2308,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { withTtlCache } from './cache.js';
 import type { MasterKeyProvider } from './provider.js';
 
-function makeMockProvider(): { provider: MasterKeyProvider; calls: number } {
+function makeMockProvider(): { provider: MasterKeyProvider; calls: () => number } {
   let calls = 0;
   const provider: MasterKeyProvider = {
     async getKeyBytes(v) {
@@ -2442,12 +2319,7 @@ function makeMockProvider(): { provider: MasterKeyProvider; calls: number } {
       return [1, 2, 3];
     },
   };
-  return {
-    provider,
-    get calls() {
-      return calls;
-    },
-  };
+  return { provider, calls: () => calls };
 }
 
 describe('withTtlCache', () => {
@@ -2457,7 +2329,7 @@ describe('withTtlCache', () => {
     const a = await cached.getKeyBytes(1);
     const b = await cached.getKeyBytes(1);
     expect(a.equals(b)).toBe(true);
-    expect(m.calls).toBe(1);
+    expect(m.calls()).toBe(1);
   });
 
   it('refetches after TTL expiry', async () => {
@@ -2468,20 +2340,21 @@ describe('withTtlCache', () => {
       await cached.getKeyBytes(1);
       vi.advanceTimersByTime(60_001);
       await cached.getKeyBytes(1);
-      expect(m.calls).toBe(2);
+      expect(m.calls()).toBe(2);
     } finally {
       vi.useRealTimers();
     }
   });
 
   it('does not cache listVersions', async () => {
-    const m = makeMockProvider();
     let listCalls = 0;
     const counted: MasterKeyProvider = {
-      getKeyBytes: m.provider.getKeyBytes,
+      async getKeyBytes(v) {
+        return Buffer.alloc(32, v);
+      },
       async listVersions() {
         listCalls += 1;
-        return m.provider.listVersions();
+        return [1, 2, 3];
       },
     };
     const cached = withTtlCache(counted, { ttlMs: 60_000 });
@@ -2496,7 +2369,7 @@ describe('withTtlCache', () => {
     await cached.getKeyBytes(1);
     await cached.getKeyBytes(2);
     await cached.getKeyBytes(1);
-    expect(m.calls).toBe(2);
+    expect(m.calls()).toBe(2);
   });
 });
 ```
@@ -2571,7 +2444,7 @@ git commit -m "feat(master-keys): 6h TTL cache wrapper for MasterKeyProvider"
 
 ---
 
-## Task 17: Provider factory + index
+## Task 18: Provider factory + index
 
 The factory picks a provider based on `MASTER_KEY_PROVIDER` env (`env|file`). GCPSM is added in Phase 10. The factory wraps the inner provider in the TTL cache.
 
@@ -2715,7 +2588,7 @@ git commit -m "feat(master-keys): factory dispatching env|file providers + TTL c
 
 ---
 
-## Task 18: Final phase-end verification
+## Task 19: Final phase-end verification
 
 - [ ] **Step 1: Full local pipeline**
 
@@ -2735,7 +2608,26 @@ PG_TEST_URL=postgresql://test:test@127.0.0.1:55432/zerocode_test pnpm test src/s
 
 Expected: 8 conformance tests pass.
 
-- [ ] **Step 3: Confirm import paths**
+- [ ] **Step 3: Smoke-test the Drizzle-backed storage manually**
+
+```bash
+node --input-type=module -e "
+  import { mkdtempSync } from 'node:fs';
+  import { tmpdir } from 'node:os';
+  import { join } from 'node:path';
+  import { createSqliteStorage } from './dist/storage/sqlite.mjs';
+  // (run via ts-node or after build; confirms migration runs cleanly on a fresh path)
+  const dir = mkdtempSync(join(tmpdir(), 'oidc-bridge-smoke-'));
+  const s = createSqliteStorage({ path: join(dir, 'smoke.db') });
+  await s.createUser({ id: 'u_smoke', email: 'smoke@x.y' });
+  console.log(await s.getUserByEmail('smoke@x.y'));
+  await s.close();
+" || echo "smoke skipped (build artifact path may differ); skip step 3 if build target differs"
+```
+
+The smoke step is informational — green CI test runs are the real gate.
+
+- [ ] **Step 4: Confirm import paths**
 
 ```bash
 git grep -nE "from '\\./storage/'" src/ | head -5
@@ -2744,7 +2636,7 @@ git grep -nE "from '\\./master-keys/'" src/ | head -5
 
 Expected: no top-level imports yet from outside the storage/master-keys modules — only their own internal imports. (Phase 2 is the first consumer.)
 
-- [ ] **Step 4: Confirm spec invariants are not violated**
+- [ ] **Step 5: Confirm spec invariants are not violated**
 
 ```bash
 git grep -nE 'master_key|sealing_key' src/master-keys/ | head
@@ -2755,14 +2647,24 @@ Expected:
 - First grep shows no master key bytes printed in any error (only "version N", "at least 32 bytes" — no payloads).
 - Second grep is empty: no `console.log` in the new modules.
 
+- [ ] **Step 6: Confirm Drizzle artifacts are committed**
+
+```bash
+ls drizzle/pg/ drizzle/sqlite/
+ls drizzle/pg/meta/ drizzle/sqlite/meta/
+```
+
+Expected: each dialect has `0000_*.sql` and `meta/_journal.json` + `meta/0000_snapshot.json`. Phase 1 should land with exactly one migration per dialect.
+
 ---
 
 ## Phase 1 — done condition
 
-After Task 18 passes:
+After Task 19 passes:
 
-- 7 tables exist in both pg and sqlite migrations and are tested by the same conformance suite.
-- The migration runner is idempotent on both backends.
+- 7 tables exist in both pg and sqlite Drizzle schemas, both passing the same conformance suite. Schema drift between `schema.pg.ts` and `schema.sqlite.ts` is caught by the conformance test (`mtlsCertEnc` bytes round-trip, `Date` round-trip at ms precision, `string[]` round-trip, `Record<string,unknown>` JSON round-trip, `boolean` round-trip).
+- Drizzle-generated migrations under `drizzle/pg/` and `drizzle/sqlite/` are committed.
+- The migration runner is idempotent on both backends (Drizzle's `__drizzle_migrations` table tracks applied SQL).
 - `MasterKeyProvider` has env + file implementations, an HKDF-based per-app sealing key derivation, and a 6-hour TTL cache.
 - The factory dispatches by `MASTER_KEY_PROVIDER` env.
 - No HTTP route, no CLI, no Toss adapter has been touched yet — Phase 1 is library code only.

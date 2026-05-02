@@ -52,14 +52,12 @@ describe('MockTossAdapter', () => {
 
   it('accessRemove happy records the call', async () => {
     const a = new MockTossAdapter();
-    await a.accessRemove(ctx, { accessToken: 'TOSS_AT_OPAQUE_FIXTURE' });
-    expect(a.accessRemoveCalls).toEqual([
-      { appId: 'app_test', accessToken: 'TOSS_AT_OPAQUE_FIXTURE' },
-    ]);
+    await a.accessRemove(ctx, { userKey: '42' });
+    expect(a.accessRemoveCalls).toEqual([{ appId: 'app_test', userKey: '42' }]);
   });
 
-  it('accessRemove fail-at throws upstream_error', async () => {
-    await expect(adapter.accessRemove(ctx, { accessToken: 'fail-at' })).rejects.toMatchObject({
+  it('accessRemove fail-userkey throws upstream_error', async () => {
+    await expect(adapter.accessRemove(ctx, { userKey: 'fail-userkey' })).rejects.toMatchObject({
       code: 'upstream_error',
     });
   });

@@ -24,7 +24,7 @@ interface SuccessLoginMe {
 }
 
 export class MockTossAdapter implements TossAdapter {
-  readonly accessRemoveCalls: { appId: string; accessToken: string }[] = [];
+  readonly accessRemoveCalls: { appId: string; userKey: string }[] = [];
 
   async generateToken(_ctx: TossAdapterContext, input: GenerateTokenInput): Promise<TossTokenSet> {
     if (input.authorizationCode === 'fail-code') {
@@ -63,10 +63,10 @@ export class MockTossAdapter implements TossAdapter {
     return { userKey: s.userKey, scope: s.scope.split(' '), agreedTerms: s.agreedTerms };
   }
 
-  async accessRemove(ctx: TossAdapterContext, input: { accessToken: string }): Promise<void> {
-    if (input.accessToken === 'fail-at') {
-      throw new TossUpstreamError('upstream_error', 'mock fail-at');
+  async accessRemove(ctx: TossAdapterContext, input: { userKey: string }): Promise<void> {
+    if (input.userKey === 'fail-userkey') {
+      throw new TossUpstreamError('upstream_error', 'mock fail-userkey');
     }
-    this.accessRemoveCalls.push({ appId: ctx.appId, accessToken: input.accessToken });
+    this.accessRemoveCalls.push({ appId: ctx.appId, userKey: input.userKey });
   }
 }

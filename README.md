@@ -12,11 +12,19 @@ For Edge Function / Cloud Function operators that want server authority, the sam
 
 ## Status
 
-Zero-code mode is under active implementation as of May 2026. See:
+Zero-code mode is under active implementation as of May 2026. Phases 0–2 are merged to `main`; Phase 3 (the `POST /oidc/token` endpoint) is next. See:
 
 - [Design spec](docs/superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md) — full architecture, components, security model.
 - [Implementation index](docs/superpowers/plans/2026-05-01-zero-code-mode-index.md) — phase-by-phase plan.
 - [`MIGRATION.md`](./MIGRATION.md) — breaking change from M0.
+
+| Phase | What landed | PR |
+|---|---|---|
+| 0 | Pino-logging Hono app, `/healthz`, build/lint/test pipeline. Removes legacy `/verify`. | [#19](https://github.com/apps-in-toss-community/oidc-bridge/pull/19) |
+| 1 | 7-table schema (pg + sqlite), `MasterKeyProvider`, HKDF, 6h key cache. | [#19](https://github.com/apps-in-toss-community/oidc-bridge/pull/19) |
+| 2 | Admin REST + CLI (workspaces, apps, api_tokens), bcrypt secrets, mTLS column encryption, ownership state machine, audit log. | [#20](https://github.com/apps-in-toss-community/oidc-bridge/pull/20), [#21](https://github.com/apps-in-toss-community/oidc-bridge/pull/21) |
+| 3 | `POST /oidc/token` (public client) + JWKS + discovery, against mocked Toss. | _next_ |
+| 4–11 | userinfo + revoke, real Toss mTLS, admin sessions, CLI bootstrap, observability, self-host artifacts, GCP Cloud Run, sdk-example dog-fooding. | _planned_ |
 
 ## Self-host
 

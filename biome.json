@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!dist", "!build", "!coverage", "!node_modules", "!.changeset"]
+    "includes": ["**", "!dist", "!build", "!coverage", "!node_modules", "!.changeset", "!drizzle"]
   },
   "formatter": {
     "enabled": true,

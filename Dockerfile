@@ -6,6 +6,11 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
+# better-sqlite3 ships no musl prebuild, so the install script falls back to
+# `node-gyp rebuild`. python3/make/g++ are needed for that compile only; the
+# runtime image keeps alpine's lean footprint.
+RUN apk add --no-cache python3 make g++
+
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 COPY package.json pnpm-lock.yaml ./

@@ -66,3 +66,64 @@ describe('tokenService.authorizationCode', () => {
     ).rejects.toMatchObject({ code: 'invalid_grant' });
   });
 });
+
+describe('tokenService.refresh', () => {
+  it('round-trips: auth_code → refresh → unwrap shows new Toss tokens', async () => {
+    const reg = await createSigningKeyRegistry({
+      activeKid: 'k1',
+      signingKeys: [{ kid: 'k1', pem: genPem() }],
+    });
+    const sealingKey = Buffer.alloc(32, 11);
+    const service = createTokenService({
+      adapter: new MockTossAdapter(),
+      registry: reg,
+      issuer: 'https://x',
+      idTokenTtlSeconds: 3600,
+      resolveAppSealingKey: async () => sealingKey,
+      now: () => 100,
+    });
+    const first = await service.authorizationCode({
+      app: { id: 'a', clientId: 'a', sealingKeyVersion: 1 },
+      authorizationCode: 'good',
+    });
+    const firstUnwrapped = unwrapSealedToken({
+      token: first.refresh_token,
+      resolveKey: () => sealingKey,
+      expectedAppId: 'a',
+      expectedTossUserKey: '42',
+    });
+    const second = await service.refresh({
+      app: { id: 'a', clientId: 'a', sealingKeyVersion: 1 },
+      unwrappedRt: { tossRt: firstUnwrapped.tossRt, tossUserKey: firstUnwrapped.tossUserKey },
+    });
+    const secondUnwrapped = unwrapSealedToken({
+      token: second.access_token,
+      resolveKey: () => sealingKey,
+      expectedAppId: 'a',
+      expectedTossUserKey: '42',
+    });
+    expect(secondUnwrapped.tossAt).toBe('TOSS_AT_OPAQUE_REFRESHED');
+    expect(secondUnwrapped.tossRt).toBe('TOSS_RT_OPAQUE_REFRESHED');
+  });
+
+  it('refresh propagates invalid_grant from Toss', async () => {
+    const reg = await createSigningKeyRegistry({
+      activeKid: 'k1',
+      signingKeys: [{ kid: 'k1', pem: genPem() }],
+    });
+    const service = createTokenService({
+      adapter: new MockTossAdapter(),
+      registry: reg,
+      issuer: 'https://x',
+      idTokenTtlSeconds: 3600,
+      resolveAppSealingKey: async () => Buffer.alloc(32, 11),
+      now: () => 1,
+    });
+    await expect(
+      service.refresh({
+        app: { id: 'a', clientId: 'a', sealingKeyVersion: 1 },
+        unwrappedRt: { tossRt: 'fail-rt', tossUserKey: '42' },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_grant' });
+  });
+});

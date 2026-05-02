@@ -108,7 +108,7 @@ describe('POST /oidc/revoke', () => {
     expect(res.status).toBe(200);
   });
 
-  it('marks an access_token revoked locally and does NOT call accessRemove', async () => {
+  it('access_token hint also calls accessRemove (RFC 7009 §2.1 search across types)', async () => {
     const { app: h, adapter, store } = buildHarness(baseApp);
     const at = makeToken(baseApp);
     const res = await h.request('/oidc/revoke', {
@@ -118,7 +118,33 @@ describe('POST /oidc/revoke', () => {
     });
     expect(res.status).toBe(200);
     expect(store.isRevoked({ appId: baseApp.id, token: at })).toBe(true);
-    expect(adapter.accessRemoveCalls).toEqual([]);
+    expect(adapter.accessRemoveCalls).toEqual([{ appId: baseApp.id, userKey: '42' }]);
+  });
+
+  it('omitted hint also calls accessRemove (RFC 7009 §2.1)', async () => {
+    const { app: h, adapter, store } = buildHarness(baseApp);
+    const tok = makeToken(baseApp);
+    const res = await h.request('/oidc/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: `token=${encodeURIComponent(tok)}`,
+    });
+    expect(res.status).toBe(200);
+    expect(store.isRevoked({ appId: baseApp.id, token: tok })).toBe(true);
+    expect(adapter.accessRemoveCalls).toEqual([{ appId: baseApp.id, userKey: '42' }]);
+  });
+
+  it('accepts JSON content-type', async () => {
+    const { app: h, adapter, store } = buildHarness(baseApp);
+    const tok = makeToken(baseApp);
+    const res = await h.request('/oidc/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: tok, token_type_hint: 'refresh_token' }),
+    });
+    expect(res.status).toBe(200);
+    expect(store.isRevoked({ appId: baseApp.id, token: tok })).toBe(true);
+    expect(adapter.accessRemoveCalls).toEqual([{ appId: baseApp.id, userKey: '42' }]);
   });
 
   it('refresh_token hint triggers accessRemove on Toss', async () => {

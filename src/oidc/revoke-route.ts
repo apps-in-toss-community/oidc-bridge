@@ -66,12 +66,17 @@ export function revokeRoute(opts: RevokeRouteOpts) {
 
     opts.revocationStore.revoke({ appId, token });
 
-    if (parsed.data.token_type_hint === 'refresh_token') {
-      try {
-        await opts.tossAdapter.accessRemove({ appId }, { userKey: payload.tossUserKey });
-      } catch {
-        // RFC 7009 always-200 — swallow upstream errors.
-      }
+    // RFC 7009 §2.1: when the hint mismatches the actual token type, the
+    // server is RECOMMENDED to search across all supported types. The sealed
+    // wrapper carries enough state (userKey) to invalidate the upstream Toss
+    // session regardless of hint, so call accessRemove on every successful
+    // unwrap and just record whether it succeeded.
+    let accessRemoveOk = false;
+    try {
+      await opts.tossAdapter.accessRemove({ appId }, { userKey: payload.tossUserKey });
+      accessRemoveOk = true;
+    } catch {
+      // RFC 7009 always-200 — swallow upstream errors, surface in audit.
     }
 
     await appendAudit({
@@ -79,7 +84,10 @@ export function revokeRoute(opts: RevokeRouteOpts) {
       actor: appId,
       action: 'oidc.token.revoke',
       target: appId,
-      details: { hint: parsed.data.token_type_hint ?? 'unspecified' },
+      details: {
+        hint: parsed.data.token_type_hint ?? 'unspecified',
+        access_remove_ok: accessRemoveOk,
+      },
     });
     return c.body(null, 200);
   });

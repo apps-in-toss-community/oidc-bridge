@@ -401,6 +401,32 @@ describe('POST /oidc/token (confidential client)', () => {
     }
   });
 
+  it('wrong client_secret does not fall through to public Origin path', async () => {
+    // App has both clientSecretHashes AND allowedOrigins set. A confidential
+    // request with the wrong secret must be rejected — it must not silently
+    // re-enter the public path because the Origin would have matched.
+    const dualApp: FakeAppRow = {
+      ...baseApp,
+      allowedOrigins: ['https://app.example.com'],
+    };
+    const h = await buildHarness({ app: dualApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://app.example.com',
+        authorization: `Basic ${Buffer.from(`${dualApp.clientId}:wrong`).toString('base64')}`,
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: dualApp.clientId,
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_client');
+  });
+
   it('401 invalid_client when Basic client_id mismatches body client_id', async () => {
     const h = await buildHarness({ app: baseApp });
     const res = await h.request('/oidc/token', {

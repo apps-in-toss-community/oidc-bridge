@@ -147,6 +147,21 @@ describe('GET /oidc/raw-tokens', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it('unknown-app 401 takes precedence over rawTokensEnabled 404', async () => {
+    // Storage knows only `disabledApp` (rawTokensEnabled=false). Token is
+    // sealed for an unknown appId. Lookup must fail (401) before the
+    // rawTokensEnabled gate is consulted — so disabling raw-tokens on the
+    // *known* app does not change the response when the *requested* app
+    // is unknown.
+    const otherApp: FakeAppRow = { ...enabledApp, id: 'app_unknown' };
+    const at = makeAt(otherApp);
+    const h = buildHarness(disabledApp);
+    const res = await h.request('/oidc/raw-tokens', {
+      headers: { authorization: `Bearer ${at}` },
+    });
+    expect(res.status).toBe(401);
+  });
 });
 
 describe('createApp wiring (raw-tokens)', () => {

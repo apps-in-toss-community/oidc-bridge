@@ -6,6 +6,14 @@ import { runSqliteMigrations } from './migrate.js';
 import * as s from './schema.sqlite.js';
 import type { AppOwnershipStatus, AppRecord } from './types.js';
 
+const OWNERSHIP_STATUSES = new Set<AppOwnershipStatus>(['pending', 'verified', 'lapsed']);
+function toOwnershipStatus(raw: string): AppOwnershipStatus {
+  if (!OWNERSHIP_STATUSES.has(raw as AppOwnershipStatus)) {
+    throw new Error(`Unknown ownershipStatus from DB: "${raw}"`);
+  }
+  return raw as AppOwnershipStatus;
+}
+
 function toAppRecord(row: typeof s.apps.$inferSelect): AppRecord {
   return {
     id: row.id,
@@ -26,7 +34,7 @@ function toAppRecord(row: typeof s.apps.$inferSelect): AppRecord {
     ),
     sealingKeyVersion: row.sealingKeyVersion,
     allowedOrigins: row.allowedOrigins,
-    ownershipStatus: row.ownershipStatus as AppOwnershipStatus,
+    ownershipStatus: toOwnershipStatus(row.ownershipStatus),
     ownershipGraceUntil: row.ownershipGraceUntil,
     rawTokensEnabled: row.rawTokensEnabled,
     createdAt: row.createdAt,
@@ -121,6 +129,11 @@ export function createSqliteStorage(opts: SqliteStorageOptions): Storage {
     async updateWorkspace(id, patch) {
       const set: { name?: string } = {};
       if (patch.name !== undefined) set.name = patch.name;
+      if (Object.keys(set).length === 0) {
+        const existing = await storage.getWorkspace(id);
+        if (!existing) throw new Error(`workspace ${id} not found`);
+        return existing;
+      }
       const [row] = await db
         .update(s.workspaces)
         .set(set)

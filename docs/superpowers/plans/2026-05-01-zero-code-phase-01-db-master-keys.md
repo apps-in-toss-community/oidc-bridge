@@ -192,8 +192,8 @@ Postgres is the canonical dialect. Drizzle's `pgTable` builder produces schema o
 import { sql } from 'drizzle-orm';
 import {
   boolean,
-  bytea,
   check,
+  customType,
   index,
   integer,
   jsonb,
@@ -202,6 +202,14 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+
+// `bytea` is not a top-level export from `drizzle-orm/pg-core` (verified
+// against 0.45.2). Define it via customType — Drizzle returns Buffer on
+// SELECT and accepts Buffer on INSERT, matching the spec §5.3 boundary
+// (drivers normalize to Uint8Array at the storage interface).
+const bytea = customType<{ data: Buffer; default: false }>({
+  dataType: () => 'bytea',
+});
 
 const tsCol = (name: string) =>
   timestamp(name, { withTimezone: true, mode: 'date' });

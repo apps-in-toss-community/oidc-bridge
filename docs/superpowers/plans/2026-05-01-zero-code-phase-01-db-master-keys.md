@@ -155,7 +155,7 @@ export default defineConfig({
     globals: false,
     isolate: true,
     pool: 'forks',
-    poolOptions: { forks: { singleFork: false } },
+    forks: { singleFork: false },
     testTimeout: 15_000,
     include: ['src/**/*.test.ts', 'cli/**/*.test.ts'],
   },

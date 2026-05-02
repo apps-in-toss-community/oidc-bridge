@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { appendAudit } from '../apps/audit.js';
+import { verifyClientSecret } from '../apps/secrets.js';
 import type { Storage } from '../storage/interface.js';
+import { resolveClientAuth } from './client-auth.js';
 import { toOAuthError } from './errors.js';
 import { originIsAllowed } from './origin-check.js';
 import { peekSealedTokenVersion, unwrapSealedToken } from './sealed-token.js';
@@ -57,10 +59,28 @@ export function tokenRoute(opts: TokenRouteOpts) {
       return c.json(e.body, e.status as never);
     }
 
-    const origin = c.req.header('origin');
-    if (!originIsAllowed(origin, appRow.allowedOrigins)) {
-      const e = toOAuthError({ code: 'invalid_client', description: 'origin not allowed' });
+    const authResult = resolveClientAuth({
+      authorization: c.req.header('authorization'),
+      bodyClientId: body.client_id,
+      bodyClientSecret: body.client_secret,
+    });
+    if (authResult.kind === 'invalid') {
+      const e = toOAuthError({ code: 'invalid_client', description: authResult.reason });
       return c.json(e.body, e.status as never);
+    }
+
+    if (authResult.kind === 'confidential') {
+      const ok = await verifyClientSecret(authResult.plainSecret, appRow.clientSecretHashes ?? []);
+      if (!ok) {
+        const e = toOAuthError({ code: 'invalid_client', description: 'invalid client_secret' });
+        return c.json(e.body, e.status as never);
+      }
+    } else {
+      const origin = c.req.header('origin');
+      if (!originIsAllowed(origin, appRow.allowedOrigins)) {
+        const e = toOAuthError({ code: 'invalid_client', description: 'origin not allowed' });
+        return c.json(e.body, e.status as never);
+      }
     }
 
     try {

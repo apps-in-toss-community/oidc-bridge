@@ -17,7 +17,10 @@ export type AuditAction =
   | 'api_token.delete'
   | 'master_key.rotate'
   | 'oidc.token.issue'
-  | 'oidc.token.refresh';
+  | 'oidc.token.refresh'
+  | 'oidc.token.revoke'
+  | 'oidc.userinfo.read'
+  | 'oidc.raw_tokens.read';
 
 export interface AppendAuditInput {
   storage: Storage;

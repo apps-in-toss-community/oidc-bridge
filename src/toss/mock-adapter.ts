@@ -24,6 +24,8 @@ interface SuccessLoginMe {
 }
 
 export class MockTossAdapter implements TossAdapter {
+  readonly accessRemoveCalls: { appId: string; userKey: string }[] = [];
+
   async generateToken(_ctx: TossAdapterContext, input: GenerateTokenInput): Promise<TossTokenSet> {
     if (input.authorizationCode === 'fail-code') {
       throw new TossUpstreamError('invalid_grant', 'mock fail-code');
@@ -59,5 +61,12 @@ export class MockTossAdapter implements TossAdapter {
     }
     const s = (meSuccess as { success: SuccessLoginMe }).success;
     return { userKey: s.userKey, scope: s.scope.split(' '), agreedTerms: s.agreedTerms };
+  }
+
+  async accessRemove(ctx: TossAdapterContext, input: { userKey: string }): Promise<void> {
+    if (input.userKey === 'fail-userkey') {
+      throw new TossUpstreamError('upstream_error', 'mock fail-userkey');
+    }
+    this.accessRemoveCalls.push({ appId: ctx.appId, userKey: input.userKey });
   }
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import type { Storage } from '../storage/interface.js';
 import { MockTossAdapter } from '../toss/mock-adapter.js';
+import { createInMemoryRevocationStore } from './revocation-store.js';
 import { createSigningKeyRegistry } from './signing-keys.js';
 
 function genPem(): string {
@@ -32,6 +33,7 @@ describe('discovery + jwks integration', () => {
         } as unknown as Storage,
         tossAdapter: new MockTossAdapter(),
         resolveAppSealingKey: async () => Buffer.alloc(32, 11),
+        revocationStore: createInMemoryRevocationStore(),
       },
     });
     const disc = await app.request('/.well-known/openid-configuration');

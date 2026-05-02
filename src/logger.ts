@@ -24,6 +24,9 @@ const REDACT_PATHS = [
   'id_token',
   'code_verifier',
   'code',
+  'token',
+  'req.headers.authorization',
+  'res.headers.authorization',
   // Wildcard variants for nested objects.
   '*.client_secret',
   '*.access_token',
@@ -37,6 +40,7 @@ const REDACT_PATHS = [
   '*.id_token',
   '*.code_verifier',
   '*.code',
+  '*.token',
 ];
 
 export function createLogger(opts: CreateLoggerOptions = {}): Logger {

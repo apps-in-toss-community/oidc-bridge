@@ -1,9 +1,11 @@
 import { generateKeyPairSync } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import type { Storage } from '../storage/interface.js';
 import { MockTossAdapter } from '../toss/mock-adapter.js';
+import { createInMemoryRevocationStore } from './revocation-store.js';
 import { createSigningKeyRegistry } from './signing-keys.js';
 import { tokenRoute } from './token-route.js';
 import { createTokenService } from './token-service.js';
@@ -19,6 +21,7 @@ interface FakeAppRow {
   sealingKeyVersion: number;
   allowedOrigins: string[];
   ownershipStatus: 'verified' | 'lapsed' | 'pending';
+  clientSecretHashes?: string[];
 }
 
 function fakeStorage(app: FakeAppRow) {
@@ -295,6 +298,154 @@ describe('POST /oidc/token error cases (public client)', () => {
   });
 });
 
+describe('POST /oidc/token (confidential client)', () => {
+  const plain = 's3cret';
+  const hash = bcrypt.hashSync(plain, 10);
+  const baseApp: FakeAppRow = {
+    id: 'app_abc',
+    clientId: 'app_abc',
+    sealingKeyVersion: 1,
+    allowedOrigins: [],
+    ownershipStatus: 'verified',
+    clientSecretHashes: [hash],
+  };
+
+  it('happy with client_secret_basic (no Origin needed)', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`${baseApp.clientId}:${plain}`).toString('base64')}`,
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: baseApp.clientId,
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('happy with client_secret_post', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: baseApp.clientId,
+        client_secret: plain,
+      }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('401 invalid_client when secret wrong', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`${baseApp.clientId}:wrong`).toString('base64')}`,
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: baseApp.clientId,
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_client');
+  });
+
+  it('401 invalid_client when both Basic and body client_secret present (RFC 6749 §2.3)', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`${baseApp.clientId}:${plain}`).toString('base64')}`,
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: baseApp.clientId,
+        client_secret: plain,
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_client');
+  });
+
+  it('rotation overlap: both old and new secrets accepted while both hashes present', async () => {
+    const newPlain = 'newsecret';
+    const newHash = bcrypt.hashSync(newPlain, 10);
+    const rotated: FakeAppRow = { ...baseApp, clientSecretHashes: [hash, newHash] };
+    const h = await buildHarness({ app: rotated });
+    for (const p of [plain, newPlain]) {
+      const res = await h.request('/oidc/token', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Basic ${Buffer.from(`${rotated.clientId}:${p}`).toString('base64')}`,
+        },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          code: 'good',
+          client_id: rotated.clientId,
+        }),
+      });
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it('wrong client_secret does not fall through to public Origin path', async () => {
+    // App has both clientSecretHashes AND allowedOrigins set. A confidential
+    // request with the wrong secret must be rejected — it must not silently
+    // re-enter the public path because the Origin would have matched.
+    const dualApp: FakeAppRow = {
+      ...baseApp,
+      allowedOrigins: ['https://app.example.com'],
+    };
+    const h = await buildHarness({ app: dualApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://app.example.com',
+        authorization: `Basic ${Buffer.from(`${dualApp.clientId}:wrong`).toString('base64')}`,
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: dualApp.clientId,
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_client');
+  });
+
+  it('401 invalid_client when Basic client_id mismatches body client_id', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`other:${plain}`).toString('base64')}`,
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: baseApp.clientId,
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_client');
+  });
+});
+
 describe('createApp wiring', () => {
   it('mounts /oidc/token via createApp', async () => {
     const reg = await createSigningKeyRegistry({
@@ -322,6 +473,7 @@ describe('createApp wiring', () => {
         storage: fakeStorage(fakeApp),
         tossAdapter: new MockTossAdapter(),
         resolveAppSealingKey: async () => sealingKey,
+        revocationStore: createInMemoryRevocationStore(),
         now: () => 1735686000,
       },
     });

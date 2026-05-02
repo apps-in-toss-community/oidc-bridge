@@ -49,4 +49,16 @@ describe('MockTossAdapter', () => {
       code: 'invalid_grant',
     });
   });
+
+  it('accessRemove happy records the call', async () => {
+    const a = new MockTossAdapter();
+    await a.accessRemove(ctx, { userKey: '42' });
+    expect(a.accessRemoveCalls).toEqual([{ appId: 'app_test', userKey: '42' }]);
+  });
+
+  it('accessRemove fail-userkey throws upstream_error', async () => {
+    await expect(adapter.accessRemove(ctx, { userKey: 'fail-userkey' })).rejects.toMatchObject({
+      code: 'upstream_error',
+    });
+  });
 });

@@ -30,6 +30,7 @@ export interface TossAdapter {
   generateToken(ctx: TossAdapterContext, input: GenerateTokenInput): Promise<TossTokenSet>;
   refreshToken(ctx: TossAdapterContext, input: RefreshTokenInput): Promise<TossTokenSet>;
   loginMe(ctx: TossAdapterContext, input: { accessToken: string }): Promise<LoginMeOutput>;
+  accessRemove(ctx: TossAdapterContext, input: { userKey: string }): Promise<void>;
 }
 
 export class TossUpstreamError extends Error {

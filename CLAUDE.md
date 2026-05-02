@@ -15,7 +15,7 @@
 
 **oidc-bridge** — 토스 로그인을 표준 OIDC 어댑터로 중계해서 mini-app 운영자가 Supabase / Firebase / Auth0 / Keycloak 같은 일반 IdP 통합 흐름으로 토스 로그인을 붙일 수 있게 해주는 multi-tenant 서버.
 
-전체 설계는 [`docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md`](docs/superpowers/specs/2026-04-30-oidc-bridge-m1-redesign-design.md). 본 문서와 충돌하면 spec이 source of truth.
+전체 설계는 [`docs/superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md`](docs/superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md) (zero-code mode). 12-phase 구현 인덱스는 [`docs/superpowers/plans/2026-05-01-zero-code-mode-index.md`](docs/superpowers/plans/2026-05-01-zero-code-mode-index.md). 옛 M1 redesign spec(`2026-04-30-...`)은 history로만 보존. 본 문서와 충돌하면 spec이 source of truth.
 
 ### 왜 필요한가
 
@@ -30,33 +30,43 @@
 
 ## 아키텍처
 
-### Multi-tenant + 거의 stateless
+### Multi-tenant + DB-backed
 
-Tenant store만이 유일한 영속 상태 — (mTLS cert+key, OIDC `client_id`, `client_secret` hash, 메타데이터). 그 외에는 stateless: 세션 스토어/DB/Redis 없음. Bridge가 발급하는 access_token은 **sealed wrapper** — `(tenant_id, toss_AT, toss_RT, exp)`을 per-tenant 키로 AEAD(AES-256-GCM)로 봉인한 opaque string (`aitc_<base64url>`). Rate-limit 카운터는 in-memory per-instance (M3).
+영속 상태는 RDB의 7개 테이블 — `users`, `api_tokens`, `workspaces`, `apps`, `user_sessions`, `master_keys`, `audit_log`. mTLS cert/key는 `apps` 컬럼에 per-app sealing key로 봉인 저장, `client_secret`은 bcrypt hash 배열. 그 외 런타임 상태는 in-memory(rate-limit 카운터 등). Bridge가 발급하는 access/refresh token은 **sealed wrapper** — `(app_id, toss_AT, toss_RT, exp)`을 per-app HKDF-derived 키로 AEAD(AES-256-GCM)로 봉인한 opaque string (`ait_<base64url>`). 모든 인스턴스가 같은 master key를 공유하므로 sticky session 없이 unwrap 가능 (cloud invariant).
 
-배포 산출물: 단일 Docker 이미지 (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` default `8080`, `/healthz` → `200 ok`. 공용 인스턴스는 Vultr VPS의 docker-compose + Caddy(TLS 종단).
+배포 산출물: 단일 Docker 이미지 (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` default `8080`, `/healthz` → `200 ok`. 공용 인스턴스는 GCP Cloud Run + Cloud SQL pg(Phase 10), self-host는 docker-compose + SQLite/PG.
 
-### Tenant store 백엔드
+### Storage
 
-`TENANT_STORE=fs|gcpsm` env로 선택. `fs`는 `${BRIDGE_DATA_DIR}/tenants/${id}.json` (perm 600, self-host default). `gcpsm`은 Google Secret Manager `oidc-bridge-tenant-${id}` + clientId 인덱스 (공용 인스턴스 default, lazy import).
+Postgres-first + SQLite fallback. **공용 인스턴스는 Postgres**(Cloud SQL), **self-host single-app**은 SQLite로 충분(≤1 app 가정). 둘 다 Drizzle ORM(`drizzle-orm` 0.45.x) + drizzle-kit migration. 스키마는 dialect별로 hand-mirrored (`schema.pg.ts` / `schema.sqlite.ts`) — Drizzle은 cross-dialect 헬퍼를 제공하지 않으니 storage-conformance 테스트(`runStorageConformance`)가 두 driver의 동일 동작을 보장한다.
+
+`STORAGE` env로 driver 선택 (`pg`|`sqlite`). PG는 `DATABASE_URL`, SQLite는 `SQLITE_PATH`.
+
+### Master keys
+
+DB row는 metadata만. 실제 key bytes는 `MasterKeyProvider`가 외부에서 fetch:
+- `env` (`MASTER_KEY_<version>_HEX`) — self-host default
+- `file` (`${MASTER_KEY_DIR}/v<version>.key`, perm 600)
+- `gcpsm` (`oidc-bridge-master-key-v<version>`) — 공용 인스턴스 default, lazy import
+
+`MASTER_KEY_PROVIDER` env로 선택. 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 `cli master-key rotate` — old version retained until 모든 `apps.sealing_key_version`이 새로 migrate, lazy rewrap.
 
 ### `/oidc/token`이 foundational primitive
 
-모든 데이터 경로(`/oidc/userinfo`, `/oidc/revoke`, M2 `/firebase-token`)가 sealed access_token unwrap → tenant lookup → mTLS Toss 호출 한 군데에 수렴한다. 새 endpoint 추가 시 이 구조 유지.
+모든 데이터 경로(`/oidc/userinfo`, `/oidc/revoke`, `/oidc/raw-tokens`)가 sealed AT unwrap → app lookup → mTLS Toss 호출 한 군데에 수렴한다. 새 endpoint 추가 시 이 구조 유지.
 
 ### Framework: Hono
 
 Runtime-agnostic + 작은 표면 + 빠른 cold-start + CORS/rate-limit/JWT verify 미들웨어 제공. `@hono/node-server`로 Node 24 위에서 돌리되 Workers 배포 옵션은 미래에도 열려있다. **Fastify/Express 거부** — edge/runtime 이식성과 cold start 때문.
 
-### API 표면 (M1 + M2)
+### API 표면
 
 모든 응답 JSON. 에러는 OAuth 2.0/OIDC 관례대로 `{ error, error_description }`.
 
-- **OIDC (M1)**: `GET /.well-known/openid-configuration` (`authorization_endpoint`/`response_types_supported`는 의도적 omit — Toss SDK가 OIDC redirect 미지원), `GET /.well-known/jwks.json`, `POST /oidc/token` (`authorization_code`/`refresh_token`, 클라이언트 인증 = `client_secret_basic` | `client_secret_post`), `GET /oidc/userinfo` (Bearer → mTLS `/login-me`), `POST /oidc/revoke` (RFC 7009, 항상 200).
-- **Admin (M1)**: `POST/GET/PATCH/DELETE /admin/tenants` + `POST /admin/tenants/:id/secrets/rotate`, `ADMIN_TOKEN` bearer로 보호.
-- **CLI (M1)**: 번들로 동봉. Admin REST의 thin client + self-host bootstrap 모드(로컬 config에 직접 쓰기).
-- **Firebase (M2, self-host only)**: `POST /firebase-token` — `firebase-admin`으로 Firebase Custom Token 서명. `FIREBASE_SERVICE_ACCOUNT` 없으면 `501 not_configured`. 공용 인스턴스는 항상 501.
-- **Liveness**: `GET /healthz`.
+- **OIDC**: `GET /.well-known/openid-configuration` (`authorization_endpoint`/`response_types_supported`는 의도적 omit — Toss SDK가 OIDC redirect 미지원), `GET /.well-known/jwks.json`, `POST /oidc/token` (`authorization_code`/`refresh_token`. **public client**는 `Origin` 검증으로 인증, **confidential client**는 `client_secret_basic` / `client_secret_post`), `GET /oidc/userinfo` (Bearer → mTLS `/login-me`), `POST /oidc/revoke` (RFC 7009, 항상 200), `GET /oidc/raw-tokens` (opt-in, raw Toss tokens 노출).
+- **Admin**: `POST/GET/PATCH/DELETE /admin/workspaces`, `/admin/apps`, `/admin/api-tokens`. `API_TOKEN` bearer로 보호. mTLS material은 GET 응답에서 `***`로 마스킹.
+- **CLI**: 번들로 동봉. Admin REST의 thin client + self-host `bootstrap`(offline) + `doctor` 진단.
+- **Status**: `GET /status` (Phase 8) HTML 페이지 + `GET /healthz` liveness.
 
 ## Toss adapter
 
@@ -85,45 +95,50 @@ mTLS only (`TLS_CLIENT_CERT` + `TLS_CLIENT_KEY` per tenant, PEM). 토스 콘솔�
 
 PII 필드(name/phone/birthday/CI/gender/nationality)는 Toss-encrypted opaque 그대로 passthrough. Bridge는 PII decryption key를 보관하지 않는다.
 
-## 모듈 구조 (M1)
+## 모듈 구조
+
+상세는 spec §5.2. 요약:
 
 ```
 src/
   app.ts, server.ts, config.ts, errors.ts
-  oidc/    # discovery, jwks, token, userinfo, revoke, sealed-token, id-token, client-auth
-  toss/    # client (mTLS Agent), generate-token, refresh-token, login-me, access-remove, envelope, types
-  tenants/ # store interface, fs-store, gcpsm-store, types
-  admin/   # routes, auth (ADMIN_TOKEN bearer)
-  firebase/ # M2: custom-token, routes
-cli/index.ts + cli/commands/{tenant-create,list,show,rotate-secret,delete}.ts
+  oidc/         # discovery, jwks, token, userinfo, revoke, raw-tokens,
+                # sealed-token (ait_* AEAD+HKDF), id-token, client-auth
+  toss/         # client (mTLS Agent), generate-token, refresh-token,
+                # login-me, access-remove, envelope, types
+  storage/      # interface.ts, schema.pg.ts, schema.sqlite.ts (hand-mirrored),
+                # pg.ts, sqlite.ts, migrate.ts
+  drizzle/{pg,sqlite}/   # drizzle-kit output (committed)
+  master-keys/  # provider, env-provider, file-provider, gcpsm-provider (lazy), cache (6h TTL)
+  apps/         # admin REST: workspaces + apps + api_tokens, ownership state machine
+  audit/        # audit_log writer
+cli/index.ts + cli/commands/{bootstrap,doctor,workspace-*,app-*,api-token-*,master-key-rotate}.ts
 ```
+
+Phase 0 + Phase 1 산출물(`storage/`, `master-keys/`)은 main에 머지됨. 그 외 디렉토리는 후속 phase에서 추가.
 
 ## Secrets 처리
 
-### Tenant secrets (per-tenant)
+### Per-app secrets (DB)
 
-mTLS cert + key (PEM)는 tenant store에 암호화 저장 (GCPSM 자체 암호화, fs는 perm 600). `client_secret`은 bcrypt hash 배열만 저장. 평문은 발급/회전 시 한 번만 노출, **회전 overlap 지원**.
+mTLS cert + key (PEM)는 `apps` 테이블 컬럼에 per-app sealing key로 봉인 저장 (`bytea`/`BLOB`). `client_secret`은 bcrypt hash 배열만 저장. 평문은 발급/회전 시 한 번만 노출, **회전 overlap 지원**(여러 hash 동시 valid).
 
 ### Bridge global secrets (env)
 
 - `OIDC_ISSUER` — discovery에 노출되는 issuer URL.
-- `OIDC_SIGNING_KEY` — RSA-2048 PEM. `/jwks.json`에 공개키 노출.
-- `OIDC_MASTER_KEY` — base64 32 bytes. Per-tenant sealing key를 HKDF로 유도. 공용 인스턴스는 GCPSM `oidc-bridge-master-key`에서 lazy load.
-- `ADMIN_TOKEN` — Admin REST bearer.
-- `TENANT_STORE` — `fs` | `gcpsm`. `BRIDGE_DATA_DIR` — fs store 루트.
+- `OIDC_SIGNING_KEYS` — RS256 private keys (multi-`kid` rotation). JWKS에 public key만 노출.
+- `MASTER_KEY_PROVIDER` — `env`|`file`|`gcpsm`. `env` 모드는 `MASTER_KEY_<version>_HEX` (≥32 bytes hex). `file`은 `MASTER_KEY_DIR`. `gcpsm`은 `oidc-bridge-master-key-v<version>` (lazy import).
+- `STORAGE` — `pg`|`sqlite`. `DATABASE_URL`(pg) | `SQLITE_PATH`(sqlite).
+- `API_TOKEN` — root admin bearer (bootstrap), 이후 DB의 `api_tokens` row가 일반 경로.
 - `TOSS_API_BASE` — default `https://apps-in-toss-api.toss.im`.
-
-### Firebase service account (self-host 전용, M2)
-
-`FIREBASE_SERVICE_ACCOUNT` (raw JSON 또는 base64) 또는 `GOOGLE_APPLICATION_CREDENTIALS` (JSON 경로). Lazy init, 없으면 `501 not_configured`. **공용 인스턴스는 end-user Firebase service account를 보관하지 않는다.**
 
 ### 로딩 관례
 
-모든 secret은 env 또는 tenant store. dev는 `dotenv/config`. **로그 금지** — 구조화 logger가 알려진 secret 키 이름을 redact.
+모든 secret은 env 또는 DB(per-app). dev는 `dotenv/config`. **로그 금지** — 구조화 logger(pino)가 알려진 secret 키 이름을 redact.
 
-## Rate-limit / 남용 방지 (M3)
+## Rate-limit / 남용 방지 (Phase 8)
 
-M1 범위 밖. M3에서: per-IP sliding-window 카운터(in-memory per instance), `ALLOWED_ORIGINS` env로 CORS allow-list, `/oidc/*` payload 8 KiB cap, 구조화 JSON 로그(PII 없음, `x-request-id` correlation).
+초기 phase 범위 밖. Phase 8에서: per-IP sliding-window 카운터(in-memory per instance), `ALLOWED_ORIGINS` env로 CORS allow-list, `/oidc/*` payload 8 KiB cap, 구조화 JSON 로그(PII 없음, `x-request-id` correlation), optional OTel.
 
 ## MCP 전략
 
@@ -131,30 +146,37 @@ M1 범위 밖. M3에서: per-IP sliding-window 카운터(in-memory per instance)
 
 ## 기술 스택 (repo-specific)
 
-TypeScript ESM strict / **Hono** (+ `@hono/node-server`) / **jose** (ID token sign+verify, JWKS) / **bcryptjs** (client_secret hash) / **@google-cloud/secret-manager** (lazy) / **firebase-admin** (M2, lazy) / **commander** (또는 citty) for CLI / **node:crypto** + **node:tls** (AEAD, HKDF, mTLS Agent) / **tsdown** 빌드 / **vitest** 테스트.
+TypeScript ESM strict / **Hono** (+ `@hono/node-server`) / **Drizzle ORM** + **drizzle-kit** (Postgres + SQLite, hand-mirrored schemas) / **`pg`** (node-postgres) / **better-sqlite3** (sync, native binding — pnpm `onlyBuiltDependencies`) / **jose** (ID token sign+verify, JWKS) / **bcryptjs** (client_secret hash) / **@google-cloud/secret-manager** (lazy) / **undici** (HTTP/mTLS dispatcher) / **commander** (CLI) / **pino** + **pino-pretty** (logging) / **node:crypto** + **node:tls** (AEAD, HKDF, mTLS Agent) / **tsdown** 빌드 / **vitest** 테스트.
 
 조직 공통 스택(Node 24, pnpm 10.33.0, Biome lint+format, pre-commit hook 등)은 umbrella [`CLAUDE.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/CLAUDE.md)의 "공통 스택" 참조.
 
 ## 명령어
 
 ```bash
-pnpm dev         # watch
-pnpm build       # tsdown
-pnpm start       # node dist/server.mjs (배포 런타임 진입점)
-pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest run
-pnpm lint        # biome check .
+pnpm dev                  # watch
+pnpm build                # tsdown
+pnpm start                # node dist/server.mjs (배포 런타임 진입점)
+pnpm typecheck            # tsc --noEmit
+pnpm test                 # vitest run (PG_TEST_URL 미설정 시 PG conformance skip)
+pnpm lint                 # biome check .
+pnpm db:generate:pg       # drizzle-kit generate (pg)
+pnpm db:generate:sqlite   # drizzle-kit generate (sqlite)
+pnpm db:migrate:pg        # drizzle-kit migrate (pg)
+pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 ```
 
 전체 스크립트는 `package.json` 참조.
 
 ## 테스트 전략
 
-- **Unit (vitest)**: sealing wrap/unwrap roundtrip + tamper rejection, ID token sign+verify, client auth (Basic + Post + bcrypt rotation overlap), Toss envelope parsing, claim 매핑.
+- **Unit (vitest)**: sealing wrap/unwrap roundtrip + tamper rejection, HKDF derivation 결정성, ID token sign+verify, client auth (Basic + Post + bcrypt rotation overlap, public-origin), Toss envelope parsing, claim 매핑, MasterKeyProvider env/file/cache.
+- **Storage conformance (`runStorageConformance`)**: pg와 sqlite driver를 같은 테스트 매트릭스로 검증. PG는 `PG_TEST_URL` env로 gate (`describe.skip` if 미설정). CI는 `services.postgres: postgres:16-alpine` health-checked.
 - **Integration (Hono `app.request()`, no network)**: `/oidc/token` happy + invalid_client + invalid_grant, `/oidc/userinfo` happy + bad bearer, `/oidc/revoke` always-200, discovery+JWKS shape consistency, Admin CRUD with/without token.
 - **mTLS**: `https.Agent` 빌드 indirect assertion. 실 핸드셰이크는 `pnpm test:e2e:live` (수동, sandbox cert 필요, CI 아님).
 - **Contract fixtures**: `src/__fixtures__/`에 redacted `/generate-token` + `/login-me` SUCCESS/FAIL 응답.
-- **CLI**: `--help` smoke + create-then-list against in-process Bridge.
+- **CLI**: `--help` smoke + bootstrap/doctor against in-process Bridge.
+
+**Vitest 설정 주의**: `pool: 'forks'`는 top-level (`test.poolOptions.pool` 아님 — Vitest 4에서 제거됨). pg conformance가 진짜 health-checked DB와 통신하므로 fork pool로 격리 필요.
 
 ## 릴리즈 정책
 
@@ -166,20 +188,66 @@ pnpm lint        # biome check .
 
 조직 단일 source는 umbrella [`TODO.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/TODO.md). 이 repo의 `TODO.md`는 umbrella를 가리키는 stub.
 
-## 마일스톤
+## 마일스톤 (Phase 0..11)
 
-| # | 내용 | 상태 |
-|---|---|---|
-| M0 / M0.5 | scaffold + 임시 `/verify` (Basic Auth) | 완료, M1으로 폐기 예정 |
-| **M1** | **Multi-tenant OIDC + mTLS proxy** — tenant store, Admin REST + CLI, OIDC token/userinfo/revoke + discovery + JWKS, sealed AT, mTLS Toss adapter | **진행 중** |
-| M2 | `/firebase-token` (self-host) + `firebase-admin` lazy init | next |
-| M3 | Rate-limit + CORS + payload cap + 구조화 로깅 | next |
-| M4 | (Optional) 헬퍼 mini-app 기반 `/authorize` redirect 흐름 | demand 봐서 |
-| **M5** | **공용 인스턴스 launch** — Vultr Seoul 배포 + DNS + founding tenant + sdk-example dog-fooding (Supabase Edge Function으로 `AuthPage` 재구축, 공용 bridge로 Supabase 세션 E2E). dog-fooding 성공이 launch gate. | M1 후 |
-| M6 | sdk-example auth 데모 polish + 추가 IdP 시나리오 | M5 이후 |
+12-phase plan. 각 phase는 자체 PR로 main에 머지된 뒤 다음 phase 시작. 인덱스: [`docs/superpowers/plans/2026-05-01-zero-code-mode-index.md`](docs/superpowers/plans/2026-05-01-zero-code-mode-index.md).
 
-M1은 breaking change — 기존 `/verify`는 같은 릴리즈에서 제거되고 self-host 운영자에게 `MIGRATION.md`가 제공된다.
+| # | Phase | 산출물 | 상태 |
+|---|---|---|---|
+| 0 | Skeleton | Pino-logging Hono app, `/healthz`, build/lint/test pipelines. Legacy `/verify` 제거. | ✅ main |
+| 1 | DB + master-keys | 7-table schema (pg + sqlite), `MasterKeyProvider` (env/file), HKDF, 6h cache. | ✅ main |
+| **2** | **Admin** | **Admin REST + CLI (workspaces, apps, api_tokens), bcrypt secrets, mTLS column 봉인, ownership state machine, audit log.** | **진행 예정** |
+| 3 | OIDC token (public) | `POST /oidc/token` (public client, origin auth) + JWKS + discovery, mocked Toss. Sealed `ait_*`. | next |
+| 4 | userinfo / revoke / confidential | `GET /oidc/userinfo`, `POST /oidc/revoke`, confidential-client 인증. | |
+| 5 | Real Toss mTLS | mTLS adapter, sandbox-fixture capture, error mapping, `test:e2e:live`. | |
+| 6 | Admin sessions | `user_sessions` + stub session-login (feature flag). | |
+| 7 | CLI bootstrap/doctor | `bootstrap` (offline), `doctor` 진단. | |
+| 8 | Status / rate-limit / observability | `/status` HTML, sliding-window rate limits, pino structured logs, request-id, optional OTel. | |
+| 9 | Self-host artifacts | Dockerfile + docker-compose + SECURITY.md + SELF_HOSTING.md, clean-VPS smoke. | |
+| 10 | GCP Cloud Run | Cloud Run + Cloud SQL pg + GCPSM master keys + Cloud Build, DNS to `oidc-bridge.aitc.dev`. | |
+| **11** | **sdk-example dog-fooding (M5 launch gate)** | sdk-example legacy `/verify` 경로를 `appLogin → /oidc/token → signInWithIdToken`으로 교체. | |
+
+Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19). 이후 phase는 phase별 단일 PR.
 
 ## Status
 
-현재 main: `POST /verify` 가동 (임시 Basic Auth). M1 redesign이 다중 tenant + mTLS + OIDC surface로 전환한다. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
+현재 main: zero-code mode Phase 0 + Phase 1 (#19) 머지됨. 다음은 Phase 2 (Admin REST + CLI). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
+
+## Standing decisions (Phase 1에서 굳어진 것)
+
+다음 phase에서도 그대로 따른다. 회고 상세는 [`docs/superpowers/retros/2026-05-02-phase-01-retro.md`](docs/superpowers/retros/2026-05-02-phase-01-retro.md).
+
+### pnpm 10 + native modules
+
+pnpm 10은 native module의 install/build script를 기본 차단(security). better-sqlite3는 alpine/musl prebuild를 ship 안 하므로 fallback compile이 필요한데, 그 compile 자체가 차단된다. 해결: `package.json`의 `pnpm.onlyBuiltDependencies: ["better-sqlite3"]`로 명시 허가. 새 native dep 추가 시 같은 배열에 추가.
+
+### Alpine builder toolchain
+
+runtime image는 `node:24-alpine` 유지(슬림). 그러나 builder stage는 `apk add --no-cache python3 make g++` 필요 — better-sqlite3가 musl 환경에서 `node-gyp rebuild` fallback을 타기 때문. runtime stage로는 prune된 `node_modules`만 복사하므로 final 이미지 크기는 보존된다.
+
+### Drizzle 0.45.2 함정 (hand-mirrored schemas)
+
+- `bytea` customType은 `drizzle-orm/pg-core` 0.45.2에서 export되지 않음 — 직접 정의해서 쓴다.
+- `updatedAt` 컬럼은 `.defaultNow()`만으로는 UPDATE 시 stale. **`$onUpdateFn(() => new Date())` 필수**.
+- SQLite expression index에 DESC 사용 가능(empirical로 동작 — review에서 잘못된 지적이 들어와도 무시).
+- `OWNERSHIP_STATUSES` 같은 enum-ish 컬럼은 DB-level CHECK가 없으면 런타임 가드(`Set<string>`)로 검증.
+- `updateWorkspace(patch)` 같은 partial-update는 empty patch에서 Drizzle이 "No values to set" throw하므로 호출부에서 가드.
+
+### 테스트 패턴
+
+- 두 driver를 검증하는 `runStorageConformance(name, { open, cleanup })` 팩토리. SQLite는 항상 실행, PG는 `PG_TEST_URL` env gate로 `describe.skip`.
+- CI는 `services.postgres: postgres:16-alpine` health-checked + job-level `env: PG_TEST_URL`.
+- TRUNCATE-before-each-open 패턴으로 테스트 간 격리. migration은 idempotent(`runPgMigrations`).
+- Vitest 4: `pool: 'forks'`는 **top-level** (`test.poolOptions` 제거됨).
+
+### Subagent 위임 가이드라인
+
+- `Agent` 호출 시 `model` 명시: 단순 mirror/lookup은 **haiku**, 일반 구현은 **sonnet**, 어려운 설계는 **opus**. 생략하면 부모(opus)를 상속해서 단순 작업도 비싸진다.
+- mirror task(예: PG driver가 SQLite의 structural mirror)는 quality review skip 가능. spec compliance review는 항상.
+- Subagent reviewer가 잘못된 주장(e.g. "SQLite expression index DESC 안 됨")을 할 때는 empirical refute로 끝내고 진행. 끌려가지 않는다.
+- 실행 흐름은 `superpowers:subagent-driven-development` skill에 정리되어 있다.
+
+### Repo-specific commit/PR
+
+- Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
+- 한 phase = 한 PR = main으로 squash merge. `gh pr merge --delete-branch`이 메인 worktree가 main을 점유 중일 때 실패하면, 머지는 GitHub 쪽에서 이미 끝났으니 메인 worktree에서 `git pull --ff-only`로 동기화.

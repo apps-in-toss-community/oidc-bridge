@@ -148,3 +148,112 @@ describe('admin routes — api_tokens', () => {
     }
   });
 });
+
+describe('admin routes — apps', () => {
+  async function bootstrap(app: Awaited<ReturnType<typeof makeApp>>) {
+    const wsRes = await app.request('/admin/workspaces', {
+      method: 'POST',
+      headers: { ...auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'ws' }),
+    });
+    return (await readJson<{ id: string }>(wsRes)).id;
+  }
+
+  type CreateAppBody = {
+    app: { id: string; mtlsPresent: boolean; ownershipStatus: string };
+    clientSecret: string;
+  };
+
+  it('POST /admin/workspaces/:wsId/apps creates and returns plaintext secret once', async () => {
+    const app = await makeApp();
+    const wsId = await bootstrap(app);
+    const res = await app.request(`/admin/workspaces/${wsId}/apps`, {
+      method: 'POST',
+      headers: { ...auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        appIdToss: 'mini-1',
+        displayTitle: 'My App',
+        mtlsCertPem: '-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----',
+        mtlsKeyPem: '-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----',
+        allowedOrigins: ['https://app.example.com'],
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = await readJson<CreateAppBody>(res);
+    expect(body.clientSecret).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(body.app.mtlsPresent).toBe(true);
+    expect(body.app.ownershipStatus).toBe('verified');
+  });
+
+  it('GET /admin/apps/:id never returns mTLS bytes', async () => {
+    const app = await makeApp();
+    const wsId = await bootstrap(app);
+    const create = await app.request(`/admin/workspaces/${wsId}/apps`, {
+      method: 'POST',
+      headers: { ...auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        appIdToss: 'mini-2',
+        displayTitle: 'X',
+        mtlsCertPem: 'cert',
+        mtlsKeyPem: 'key',
+        allowedOrigins: [],
+      }),
+    });
+    const id = (await readJson<CreateAppBody>(create)).app.id;
+    const res = await app.request(`/admin/apps/${id}`, { headers: auth() });
+    const body = await readJson<Record<string, unknown>>(res);
+    expect(body.mtlsPresent).toBe(true);
+    expect(body.mtlsCertEnc).toBeUndefined();
+    expect(body.mtlsKeyEnc).toBeUndefined();
+    expect(body.mtls_cert_enc).toBeUndefined();
+    expect(body.mtls_key_enc).toBeUndefined();
+  });
+
+  it('POST /admin/apps/:id/secrets/rotate returns a new plaintext', async () => {
+    const app = await makeApp();
+    const wsId = await bootstrap(app);
+    const create = await app.request(`/admin/workspaces/${wsId}/apps`, {
+      method: 'POST',
+      headers: { ...auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        appIdToss: 'mini-3',
+        displayTitle: 'X',
+        mtlsCertPem: 'c',
+        mtlsKeyPem: 'k',
+        allowedOrigins: [],
+      }),
+    });
+    const id = (await readJson<CreateAppBody>(create)).app.id;
+    const res = await app.request(`/admin/apps/${id}/secrets/rotate`, {
+      method: 'POST',
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    const body = await readJson<{ clientSecret: string }>(res);
+    expect(body.clientSecret).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it('POST /admin/apps/:id/raw-tokens flips the toggle', async () => {
+    const app = await makeApp();
+    const wsId = await bootstrap(app);
+    const create = await app.request(`/admin/workspaces/${wsId}/apps`, {
+      method: 'POST',
+      headers: { ...auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({
+        appIdToss: 'mini-4',
+        displayTitle: 'X',
+        mtlsCertPem: 'c',
+        mtlsKeyPem: 'k',
+        allowedOrigins: [],
+      }),
+    });
+    const id = (await readJson<CreateAppBody>(create)).app.id;
+    const res = await app.request(`/admin/apps/${id}/raw-tokens`, {
+      method: 'POST',
+      headers: { ...auth(), 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true }),
+    });
+    const body = await readJson<{ rawTokensEnabled: boolean }>(res);
+    expect(body.rawTokensEnabled).toBe(true);
+  });
+});

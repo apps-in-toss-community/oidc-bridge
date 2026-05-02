@@ -74,9 +74,17 @@ jobs:
       - name: Smoke-test /healthz
         run: |
           set -euo pipefail
+          # Generate a throwaway RS256 key for the smoke-test.
+          # The key is never used for production tokens — it only lets the
+          # server pass config validation and start successfully.
+          SIGNING_PEM=$(openssl genrsa 2048 2>/dev/null)
           # Bind to a random host port so parallel jobs on the same runner
           # don't collide on 8080.
-          docker run -d --name oidc-bridge-ci -p 127.0.0.1:0:8080 oidc-bridge:ci
+          docker run -d --name oidc-bridge-ci -p 127.0.0.1:0:8080 \
+            -e OIDC_ISSUER=http://localhost:8080 \
+            -e OIDC_ACTIVE_KID=ci \
+            -e "OIDC_SIGNING_KEY_CI_PEM=${SIGNING_PEM}" \
+            oidc-bridge:ci
           host_port=$(docker port oidc-bridge-ci 8080/tcp | awk -F: 'NR==1{print $NF}')
           echo "container bound to host port $host_port"
           ok=false

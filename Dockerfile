@@ -19,6 +19,7 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src ./src
 COPY cli ./cli
+COPY drizzle ./drizzle
 RUN pnpm build
 
 # Prune to production deps for the runtime stage.
@@ -33,11 +34,16 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080
 
+# Pre-create the default SQLite data directory and grant ownership to the
+# non-root node user. Must be done before switching to USER node.
+RUN mkdir -p /app/data && chown -R node:node /app/data
+
 USER node
 
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/package.json ./package.json
+COPY --chown=node:node --from=builder /app/drizzle ./drizzle
 
 EXPOSE 8080
 

@@ -1,0 +1,7 @@
+{
+  "resultType": "FAIL",
+  "error": {
+    "code": "INVALID_AUTHORIZATION_CODE",
+    "message": "expired or unknown"
+  }
+}

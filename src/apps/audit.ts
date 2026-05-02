@@ -15,7 +15,9 @@ export type AuditAction =
   | 'app.ownership.lapse'
   | 'api_token.create'
   | 'api_token.delete'
-  | 'master_key.rotate';
+  | 'master_key.rotate'
+  | 'oidc.token.issue'
+  | 'oidc.token.refresh';
 
 export interface AppendAuditInput {
   storage: Storage;

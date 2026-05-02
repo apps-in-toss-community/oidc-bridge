@@ -21,6 +21,9 @@ const REDACT_PATHS = [
   'api_token',
   'master_key',
   'password',
+  'id_token',
+  'code_verifier',
+  'code',
   // Wildcard variants for nested objects.
   '*.client_secret',
   '*.access_token',
@@ -31,6 +34,9 @@ const REDACT_PATHS = [
   '*.mtls_key',
   '*.api_token',
   '*.master_key',
+  '*.id_token',
+  '*.code_verifier',
+  '*.code',
 ];
 
 export function createLogger(opts: CreateLoggerOptions = {}): Logger {

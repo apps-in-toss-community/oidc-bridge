@@ -3,6 +3,7 @@ import { type MountAdminRoutesOptions, mountAdminRoutes } from './apps/routes.js
 import type { OidcConfig } from './config.js';
 import { discoveryRoute } from './oidc/discovery-route.js';
 import { jwksRoute } from './oidc/jwks-route.js';
+import { rawTokensRoute } from './oidc/raw-tokens-route.js';
 import type { RevocationStore } from './oidc/revocation-store.js';
 import { revokeRoute } from './oidc/revoke-route.js';
 import type { SigningKeyRegistry } from './oidc/signing-keys.js';
@@ -38,6 +39,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono {
     mountAdminRoutes(app, opts.admin);
   }
   if (opts.oidc) {
+    const now = opts.oidc.now ?? (() => Math.floor(Date.now() / 1000));
     app.route('/', discoveryRoute({ issuer: opts.oidc.config.issuer }));
     app.route('/', jwksRoute({ registry: opts.oidc.signingKeyRegistry }));
     const tokenService = createTokenService({
@@ -46,7 +48,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono {
       issuer: opts.oidc.config.issuer,
       idTokenTtlSeconds: opts.oidc.config.idTokenTtlSeconds,
       resolveAppSealingKey: opts.oidc.resolveAppSealingKey,
-      now: opts.oidc.now ?? (() => Math.floor(Date.now() / 1000)),
+      now,
     });
     app.route(
       '/',
@@ -72,6 +74,15 @@ export function createApp(opts: CreateAppOptions = {}): Hono {
         tossAdapter: opts.oidc.tossAdapter,
         resolveAppSealingKey: opts.oidc.resolveAppSealingKey,
         revocationStore: opts.oidc.revocationStore,
+      }),
+    );
+    app.route(
+      '/',
+      rawTokensRoute({
+        storage: opts.oidc.storage,
+        resolveAppSealingKey: opts.oidc.resolveAppSealingKey,
+        revocationStore: opts.oidc.revocationStore,
+        now,
       }),
     );
   }

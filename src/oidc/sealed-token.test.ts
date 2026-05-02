@@ -94,4 +94,21 @@ describe('unwrapSealedToken', () => {
       }),
     ).toThrow(/SEALED_TOKEN_BAD_FORMAT/);
   });
+
+  it('rejects cross-version replay (v1 wrapper read with v2 key resolver)', () => {
+    const v1Key = Buffer.alloc(32, 7);
+    const v2Key = Buffer.alloc(32, 9);
+    const tok = wrapSealedToken({ sealingKey: v1Key, sealingKeyVersion: 1, payload });
+    const body = Buffer.from(tok.slice(4), 'base64url');
+    body[0] = 2;
+    const forged = `ait_${body.toString('base64url')}`;
+    expect(() =>
+      unwrapSealedToken({
+        token: forged,
+        resolveKey: (v) => (v === 2 ? v2Key : v1Key),
+        expectedAppId: payload.appId,
+        expectedTossUserKey: payload.tossUserKey,
+      }),
+    ).toThrow(/SEALED_TOKEN_TAMPERED/);
+  });
 });

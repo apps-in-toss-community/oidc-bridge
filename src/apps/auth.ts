@@ -31,7 +31,7 @@ function forbidden() {
 export function adminAuth(opts: AdminAuthOptions) {
   return createMiddleware(async (c, next) => {
     const header = c.req.header('authorization');
-    if (!header || !header.toLowerCase().startsWith('bearer ')) {
+    if (!header?.toLowerCase().startsWith('bearer ')) {
       return unauthorized();
     }
     const plain = header.slice('bearer '.length).trim();

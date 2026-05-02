@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { createApp } from '../app.js';
 import type { Storage } from '../storage/interface.js';
 import { MockTossAdapter } from '../toss/mock-adapter.js';
 import { createSigningKeyRegistry } from './signing-keys.js';
@@ -275,5 +276,53 @@ describe('POST /oidc/token error cases (public client)', () => {
     });
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: string }).error).toBe('app_not_verified');
+  });
+});
+
+describe('createApp wiring', () => {
+  it('mounts /oidc/token via createApp', async () => {
+    const reg = await createSigningKeyRegistry({
+      activeKid: 'k1',
+      signingKeys: [{ kid: 'k1', pem: genPem() }],
+    });
+    const sealingKey = Buffer.alloc(32, 11);
+    const fakeApp: FakeAppRow = {
+      id: 'app_abc',
+      clientId: 'app_abc',
+      sealingKeyVersion: 1,
+      allowedOrigins: ['https://app.example.com'],
+      ownershipStatus: 'verified',
+    };
+    const app = createApp({
+      oidc: {
+        config: {
+          issuer: 'https://oidc-bridge.aitc.dev',
+          activeKid: 'k1',
+          signingKeys: [{ kid: 'k1', pem: 'unused-here' }],
+          idTokenTtlSeconds: 3600,
+          defaultScope: 'openid profile user_key',
+        },
+        signingKeyRegistry: reg,
+        storage: fakeStorage(fakeApp),
+        tossAdapter: new MockTossAdapter(),
+        resolveAppSealingKey: async () => sealingKey,
+        now: () => 1735686000,
+      },
+    });
+    const res = await app.request('/oidc/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://app.example.com',
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(body.access_token).toMatch(/^ait_/);
   });
 });

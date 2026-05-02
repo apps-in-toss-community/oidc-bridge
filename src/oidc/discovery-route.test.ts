@@ -1,6 +1,8 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
+import type { Storage } from '../storage/interface.js';
+import { MockTossAdapter } from '../toss/mock-adapter.js';
 import { createSigningKeyRegistry } from './signing-keys.js';
 
 function genPem(): string {
@@ -24,6 +26,12 @@ describe('discovery + jwks integration', () => {
           defaultScope: 'openid profile user_key',
         },
         signingKeyRegistry: reg,
+        storage: {
+          getAppByClientId: async () => null,
+          appendAudit: async () => {},
+        } as unknown as Storage,
+        tossAdapter: new MockTossAdapter(),
+        resolveAppSealingKey: async () => Buffer.alloc(32, 11),
       },
     });
     const disc = await app.request('/.well-known/openid-configuration');

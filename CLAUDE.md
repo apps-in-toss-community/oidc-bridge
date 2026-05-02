@@ -196,9 +196,9 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 |---|---|---|---|
 | 0 | Skeleton | Pino-logging Hono app, `/healthz`, build/lint/test pipelines. Legacy `/verify` 제거. | ✅ main |
 | 1 | DB + master-keys | 7-table schema (pg + sqlite), `MasterKeyProvider` (env/file), HKDF, 6h cache. | ✅ main |
-| **2** | **Admin** | **Admin REST + CLI (workspaces, apps, api_tokens), bcrypt secrets, mTLS column 봉인, ownership state machine, audit log.** | **진행 예정** |
-| 3 | OIDC token (public) | `POST /oidc/token` (public client, origin auth) + JWKS + discovery, mocked Toss. Sealed `ait_*`. | next |
-| 4 | userinfo / revoke / confidential | `GET /oidc/userinfo`, `POST /oidc/revoke`, confidential-client 인증. | |
+| 2 | Admin | Admin REST + CLI (workspaces, apps, api_tokens), bcrypt secrets, mTLS column 봉인, ownership state machine, audit log. | ✅ main |
+| 3 | OIDC token (public) | `POST /oidc/token` (public client, origin auth) + JWKS + discovery, mocked Toss. Sealed `ait_*`. | ✅ main |
+| **4** | **userinfo / revoke / confidential** | **`GET /oidc/userinfo`, `POST /oidc/revoke`, confidential-client 인증.** | **진행 예정** |
 | 5 | Real Toss mTLS | mTLS adapter, sandbox-fixture capture, error mapping, `test:e2e:live`. | |
 | 6 | Admin sessions | `user_sessions` + stub session-login (feature flag). | |
 | 7 | CLI bootstrap/doctor | `bootstrap` (offline), `doctor` 진단. | |
@@ -211,11 +211,13 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 
 ## Status
 
-현재 main: zero-code mode Phase 0 + Phase 1 (#19) 머지됨. 다음은 Phase 2 (Admin REST + CLI). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
+현재 main: zero-code mode Phase 0–3 머지됨 (#19, #20, #21, #22, #24, #25). 다음은 Phase 4 (`/oidc/userinfo` + `/oidc/revoke` + confidential-client 인증). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
 
-## Standing decisions (Phase 1에서 굳어진 것)
+## Standing decisions (Phase 1, 3에서 굳어진 것)
 
-다음 phase에서도 그대로 따른다. 회고 상세는 [`docs/superpowers/retros/2026-05-02-phase-01-retro.md`](docs/superpowers/retros/2026-05-02-phase-01-retro.md).
+다음 phase에서도 그대로 따른다. 회고 상세:
+- Phase 0+1: [`docs/superpowers/retros/2026-05-02-phase-01-retro.md`](docs/superpowers/retros/2026-05-02-phase-01-retro.md)
+- Phase 3: [`docs/superpowers/retros/2026-05-02-phase-03-retro.md`](docs/superpowers/retros/2026-05-02-phase-03-retro.md) (Phase 2 lessons는 PR #22에 흡수됨, 별도 retro 없음)
 
 ### pnpm 10 + native modules
 

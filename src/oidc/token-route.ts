@@ -52,6 +52,11 @@ export function tokenRoute(opts: TokenRouteOpts) {
       return c.json(e.body, e.status as never);
     }
 
+    if (appRow.ownershipStatus !== 'verified') {
+      const e = toOAuthError({ code: 'app_not_verified', description: 'app ownership not active' });
+      return c.json(e.body, e.status as never);
+    }
+
     const origin = c.req.header('origin');
     if (!originIsAllowed(origin, appRow.allowedOrigins)) {
       const e = toOAuthError({ code: 'invalid_client', description: 'origin not allowed' });

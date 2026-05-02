@@ -170,3 +170,110 @@ describe('POST /oidc/token (refresh_token)', () => {
     expect(body.error).toBe('invalid_grant');
   });
 });
+
+describe('POST /oidc/token error cases (public client)', () => {
+  const baseApp: FakeAppRow = {
+    id: 'app_abc',
+    clientId: 'app_abc',
+    sealingKeyVersion: 1,
+    allowedOrigins: ['https://app.example.com'],
+    ownershipStatus: 'verified',
+  };
+
+  it('400 invalid_request when content-type missing', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { origin: 'https://app.example.com' },
+      body: 'whatever',
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_request');
+  });
+
+  it('400 invalid_request when grant_type missing', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({ code: 'good', client_id: 'app_abc' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('401 invalid_client when client_id unknown', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'unknown',
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_client');
+  });
+
+  it('401 invalid_client when Origin not allowed', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://evil.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_client');
+  });
+
+  it('401 invalid_grant when Toss rejects code', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'fail-code',
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_grant');
+  });
+
+  it('502 upstream_error when Toss network fails', async () => {
+    const h = await buildHarness({ app: baseApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'network-error-code',
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: string }).error).toBe('upstream_error');
+  });
+
+  it('403 app_not_verified when ownership not active', async () => {
+    const pendingApp = { ...baseApp, ownershipStatus: 'pending' as const };
+    const h = await buildHarness({ app: pendingApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toBe('app_not_verified');
+  });
+});

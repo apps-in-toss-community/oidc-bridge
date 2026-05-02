@@ -34,6 +34,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8080
 
+# Pre-create the default SQLite data directory and grant ownership to the
+# non-root node user. Must be done before switching to USER node.
+RUN mkdir -p /app/data && chown -R node:node /app/data
+
 USER node
 
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules

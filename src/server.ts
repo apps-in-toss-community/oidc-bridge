@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { loadOidcConfig } from './config.js';
@@ -19,6 +21,8 @@ async function openStorage(): Promise<Storage> {
   }
   if (kind === 'sqlite') {
     const path = process.env.SQLITE_PATH ?? './data/oidc-bridge.sqlite';
+    // Ensure the parent directory exists (e.g. /app/data/ in Docker).
+    mkdirSync(dirname(path), { recursive: true });
     return createSqliteStorage({ path });
   }
   throw new Error(`unknown STORAGE=${kind}`);

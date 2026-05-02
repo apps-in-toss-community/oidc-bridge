@@ -49,4 +49,18 @@ describe('MockTossAdapter', () => {
       code: 'invalid_grant',
     });
   });
+
+  it('accessRemove happy records the call', async () => {
+    const a = new MockTossAdapter();
+    await a.accessRemove(ctx, { accessToken: 'TOSS_AT_OPAQUE_FIXTURE' });
+    expect(a.accessRemoveCalls).toEqual([
+      { appId: 'app_test', accessToken: 'TOSS_AT_OPAQUE_FIXTURE' },
+    ]);
+  });
+
+  it('accessRemove fail-at throws upstream_error', async () => {
+    await expect(adapter.accessRemove(ctx, { accessToken: 'fail-at' })).rejects.toMatchObject({
+      code: 'upstream_error',
+    });
+  });
 });

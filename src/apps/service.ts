@@ -1,11 +1,16 @@
 import { newId } from '../ids.js';
 import { deriveSealingKey } from '../master-keys/index.js';
 import type { Storage } from '../storage/interface.js';
-import type { AppRecord, Workspace } from '../storage/types.js';
+import type { ApiToken, AppRecord, User, Workspace } from '../storage/types.js';
 import { appendAudit } from './audit.js';
 import { encryptColumn } from './encryption.js';
 import { computeInitialOwnership, type Stage } from './ownership.js';
-import { generateClientSecret, hashClientSecret } from './secrets.js';
+import {
+  generateApiToken,
+  generateClientSecret,
+  hashApiToken,
+  hashClientSecret,
+} from './secrets.js';
 
 export interface ServiceCtx {
   actorUserId: string;
@@ -63,6 +68,15 @@ export interface Service {
     delete(ctx: ServiceCtx, id: string): Promise<void>;
     rotateSecret(ctx: ServiceCtx, id: string): Promise<RotateSecretResult>;
     toggleRawTokens(ctx: ServiceCtx, id: string, enabled: boolean): Promise<AppRecord>;
+  };
+  apiTokens: {
+    create(
+      ctx: ServiceCtx,
+      input: { name: string; scopes: string[] },
+    ): Promise<{ token: ApiToken; plaintext: string }>;
+    list(ctx: ServiceCtx): Promise<ApiToken[]>;
+    delete(ctx: ServiceCtx, id: string): Promise<void>;
+    verify(plain: string): Promise<{ user: User; scopes: string[] } | null>;
   };
 }
 
@@ -236,5 +250,53 @@ export function createService(opts: CreateServiceOptions): Service {
     },
   };
 
-  return { workspaces, apps };
+  const apiTokens: Service['apiTokens'] = {
+    async create(ctx, input) {
+      const plaintext = generateApiToken();
+      const tokenHash = hashApiToken(plaintext);
+      const token = await storage.createApiToken({
+        id: newId('api_token'),
+        userId: ctx.actorUserId,
+        name: input.name,
+        tokenHash,
+        scopes: input.scopes,
+      });
+      await appendAudit({
+        storage,
+        actor: ctx.actorUserId,
+        action: 'api_token.create',
+        target: token.id,
+        details: { name: input.name, scopes: input.scopes },
+      });
+      return { token, plaintext };
+    },
+    async list(ctx) {
+      return storage.listApiTokensByUser(ctx.actorUserId);
+    },
+    async delete(ctx, id) {
+      const tokens = await storage.listApiTokensByUser(ctx.actorUserId);
+      if (!tokens.some((t) => t.id === id)) {
+        throw new NotFoundError(`api_token ${id}`);
+      }
+      await storage.deleteApiToken(id);
+      await appendAudit({
+        storage,
+        actor: ctx.actorUserId,
+        action: 'api_token.delete',
+        target: id,
+      });
+    },
+    async verify(plain) {
+      if (!plain.startsWith('tok_')) return null;
+      const hash = hashApiToken(plain);
+      const row = await storage.getApiTokenByHash(hash);
+      if (!row) return null;
+      const user = await storage.getUserById(row.userId);
+      if (!user) return null;
+      await storage.touchApiTokenLastUsed(row.id, new Date());
+      return { user, scopes: row.scopes };
+    },
+  };
+
+  return { workspaces, apps, apiTokens };
 }

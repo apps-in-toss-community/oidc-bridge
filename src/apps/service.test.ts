@@ -199,3 +199,37 @@ describe('service: apps', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('service: api_tokens', () => {
+  it('creates a token and returns plaintext + hash row', async () => {
+    const r = await svc.apiTokens.create(ctx, { name: 'cli', scopes: ['admin'] });
+    expect(r.plaintext.startsWith('tok_')).toBe(true);
+    expect(r.token.scopes).toEqual(['admin']);
+  });
+
+  it('verify returns user + scopes for valid token', async () => {
+    const r = await svc.apiTokens.create(ctx, { name: 'cli', scopes: ['admin'] });
+    const ok = await svc.apiTokens.verify(r.plaintext);
+    expect(ok?.user.id).toBe('user_actor');
+    expect(ok?.scopes).toEqual(['admin']);
+  });
+
+  it('verify returns null for unknown token', async () => {
+    const out = await svc.apiTokens.verify('tok_unknown');
+    expect(out).toBeNull();
+  });
+
+  it('lists tokens for the actor', async () => {
+    await svc.apiTokens.create(ctx, { name: 'a', scopes: ['admin'] });
+    await svc.apiTokens.create(ctx, { name: 'b', scopes: [] });
+    const list = await svc.apiTokens.list(ctx);
+    expect(list).toHaveLength(2);
+  });
+
+  it('deletes a token', async () => {
+    const r = await svc.apiTokens.create(ctx, { name: 'cli', scopes: ['admin'] });
+    await svc.apiTokens.delete(ctx, r.token.id);
+    const list = await svc.apiTokens.list(ctx);
+    expect(list).toHaveLength(0);
+  });
+});

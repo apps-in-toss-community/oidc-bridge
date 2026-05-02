@@ -48,6 +48,26 @@ describe('createLogger', () => {
     expect(line).toContain('[Redacted]');
   });
 
+  it('redacts id_token, code_verifier, and code', () => {
+    const { stream, lines } = captureLogs();
+    const log = createLogger({ destination: stream, mode: 'json' });
+
+    log.info(
+      {
+        id_token: 'header.payload.signature',
+        code_verifier: 'long-random-string',
+        code: 'auth-code-from-toss',
+      },
+      'log with oidc secrets',
+    );
+
+    const line = lines.join('');
+    expect(line).not.toContain('header.payload.signature');
+    expect(line).not.toContain('long-random-string');
+    expect(line).not.toContain('auth-code-from-toss');
+    expect(line).toContain('[Redacted]');
+  });
+
   it('emits valid JSON in json mode', () => {
     const { stream, lines } = captureLogs();
     const log = createLogger({ destination: stream, mode: 'json' });

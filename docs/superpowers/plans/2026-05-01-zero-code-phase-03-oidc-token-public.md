@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Read the amendments first:** [`2026-05-01-zero-code-phase-03-amendments.md`](./2026-05-01-zero-code-phase-03-amendments.md) lists corrections discovered after Phase 2 merged to main. Two of them are already patched in this file; two require deviating from this plan's verbatim code (Service → Storage swap, audit writer signature). Skip the pre-flight section in this file — the amendments document explains why.
+
 **Goal:** Stand up `POST /oidc/token` for `grant_type=authorization_code` and `grant_type=refresh_token` against a **mocked Toss adapter**, plus RS256 id_token signing with JWKS publication and OIDC discovery. Public-client (origin auth) only — confidential-client auth lands in Phase 4. Real Toss mTLS adapter lands in Phase 5.
 
 **Architecture:** A `TossAdapter` interface that this phase implements as `MockTossAdapter` (deterministic fixtures, no network). Sealed `ait_*` tokens use AES-256-GCM with per-app HKDF-derived sealing key (Phase 1's `deriveSealingKey`) and a 1-byte version prefix. RS256 id_tokens are signed by a JWKS-managed RSA-2048 keypair stored as PEM in env (`OIDC_SIGNING_KEY_<kid>_PEM`) with `OIDC_ACTIVE_KID` selecting the active signer; verification accepts any active `kid`. All flows funnel through a `tokenService` that the route handler calls; refresh re-uses the same service.
@@ -75,7 +77,7 @@ pnpm typecheck && pnpm lint && pnpm test
 
 If any check fails on a fresh `feat/zero-code-phase-03` branch, stop. Phase 0–2 invariants are not green; fix that before continuing.
 
-This phase depends on Phase 1's `deriveSealingKey({ masterKey, appId })`, the `Storage` interface, and the `MasterKeyProvider`; and Phase 2's `Service` (specifically `service.apps.getByClientId(clientId)`) and audit-log writer. If any of these are missing, you are on the wrong branch.
+This phase depends on Phase 1's `deriveSealingKey({ masterKey, appId })` (exported from `src/master-keys/index.ts`), the `Storage` interface (`src/storage/interface.ts`, including `storage.getAppByClientId(clientId)`), and the `MasterKeyProvider` (`src/master-keys/provider.ts`); and Phase 2's audit-log writer `appendAudit({ storage, actor, action, target, details? })` from `src/apps/audit.ts`. The Phase 2 `Service` (`src/apps/service.ts`) does NOT expose `getByClientId` — Phase 03 calls `storage.getAppByClientId` directly via the `Storage` interface, bypassing the service layer for this read. The Phase 2 `AuditAction` union is in `src/apps/audit.ts` — Phase 03 extends it with `'oidc.token.issue'` and `'oidc.token.refresh'`. If any of these are missing, you are on the wrong branch.
 
 ---
 
@@ -541,7 +543,7 @@ Glue between the master-key provider (Phase 1) and `unwrapSealedToken`. Given `(
 // src/oidc/app-sealing-key.test.ts
 import { describe, it, expect } from 'vitest';
 import { createAppSealingKeyResolver } from './app-sealing-key.js';
-import { deriveSealingKey } from '../crypto/hkdf.js'; // from Phase 1
+import { deriveSealingKey } from '../master-keys/index.js'; // from Phase 1
 
 describe('createAppSealingKeyResolver', () => {
   it('derives the same key as deriveSealingKey for the matching version', async () => {
@@ -582,7 +584,7 @@ pnpm vitest run src/oidc/app-sealing-key.test.ts
 
 ```ts
 // src/oidc/app-sealing-key.ts
-import { deriveSealingKey } from '../crypto/hkdf.js';
+import { deriveSealingKey } from '../master-keys/index.js';
 import type { MasterKeyProvider } from '../crypto/master-key-provider.js';
 
 export interface AppSealingKeyResolver {
@@ -1972,7 +1974,7 @@ interface FakeAppRow {
   clientId: string;
   sealingKeyVersion: number;
   allowedOrigins: string[];
-  ownershipStatus: 'active' | 'lapsed' | 'pending';
+  ownershipStatus: 'verified' | 'lapsed' | 'pending';
 }
 
 function fakeService(app: FakeAppRow) {
@@ -2017,7 +2019,7 @@ describe('POST /oidc/token (public client)', () => {
     clientId: 'app_abc',
     sealingKeyVersion: 1,
     allowedOrigins: ['https://app.example.com'],
-    ownershipStatus: 'active',
+    ownershipStatus: 'verified',
   };
 
   it('happy authorization_code via JSON body', async () => {
@@ -2237,7 +2239,7 @@ pnpm vitest run src/oidc/sealed-token.test.ts
 describe('POST /oidc/token (refresh_token)', () => {
   const app: FakeAppRow = {
     id: 'app_abc', clientId: 'app_abc', sealingKeyVersion: 1,
-    allowedOrigins: ['https://app.example.com'], ownershipStatus: 'active',
+    allowedOrigins: ['https://app.example.com'], ownershipStatus: 'verified',
   };
 
   it('happy refresh after authorization_code', async () => {
@@ -2568,7 +2570,7 @@ Tests for the spec §8 error rows that apply to public client + authorization_co
 - 401 `invalid_client` — unknown client_id, bad origin
 - 401 `invalid_grant` — Toss FAIL on authorization_code
 - 502 `upstream_error` — Toss network failure
-- 403 `app_not_verified` — `ownershipStatus !== 'active'`
+- 403 `app_not_verified` — `ownershipStatus !== 'verified'`
 
 > Spec §8 row "App not yet verified, production traffic" maps to ownership state. In Phase 2, ownership states are `pending | active | lapsed | grace`. The route blocks unless `active`. (`grace` and `lapsed` are admin-side states; user-facing flows treat them as not-active.)
 
@@ -2579,7 +2581,7 @@ Tests for the spec §8 error rows that apply to public client + authorization_co
 describe('POST /oidc/token error cases (public client)', () => {
   const baseApp: FakeAppRow = {
     id: 'app_abc', clientId: 'app_abc', sealingKeyVersion: 1,
-    allowedOrigins: ['https://app.example.com'], ownershipStatus: 'active',
+    allowedOrigins: ['https://app.example.com'], ownershipStatus: 'verified',
   };
 
   it('400 invalid_request when content-type missing', async () => {
@@ -2672,7 +2674,7 @@ pnpm vitest run src/oidc/token-route.test.ts
 In `tokenRoute`, after looking up `appRow` and before the origin check, add:
 
 ```ts
-if (appRow.ownershipStatus !== 'active') {
+if (appRow.ownershipStatus !== 'verified') {
   const e = toOAuthError({ code: 'app_not_verified', description: 'app ownership not active' });
   return c.json(e.body, e.status as never);
 }
@@ -2716,7 +2718,7 @@ describe('buildApp wiring', () => {
     const sealingKey = Buffer.alloc(32, 11);
     const fakeApp: FakeAppRow = {
       id: 'app_abc', clientId: 'app_abc', sealingKeyVersion: 1,
-      allowedOrigins: ['https://app.example.com'], ownershipStatus: 'active',
+      allowedOrigins: ['https://app.example.com'], ownershipStatus: 'verified',
     };
     const app = await buildApp({
       service: fakeService(fakeApp) as any,

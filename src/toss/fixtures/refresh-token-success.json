@@ -1,0 +1,9 @@
+{
+  "resultType": "SUCCESS",
+  "success": {
+    "accessToken": "TOSS_AT_OPAQUE_REFRESHED",
+    "refreshToken": "TOSS_RT_OPAQUE_REFRESHED",
+    "expiresIn": 3600,
+    "scope": "openid profile user_key"
+  }
+}

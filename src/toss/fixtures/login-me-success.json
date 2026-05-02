@@ -1,0 +1,8 @@
+{
+  "resultType": "SUCCESS",
+  "success": {
+    "userKey": 42,
+    "scope": "openid profile user_key",
+    "agreedTerms": ["service", "marketing"]
+  }
+}

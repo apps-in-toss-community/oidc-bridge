@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { wrapSealedToken } from './sealed-token.js';
+import { unwrapSealedToken, wrapSealedToken } from './sealed-token.js';
 
 describe('wrapSealedToken', () => {
   const sealingKey = Buffer.alloc(32, 7);
@@ -29,5 +29,69 @@ describe('wrapSealedToken', () => {
     const t1 = wrapSealedToken({ sealingKey, sealingKeyVersion: 1, payload });
     const t2 = wrapSealedToken({ sealingKey, sealingKeyVersion: 1, payload });
     expect(t1).not.toBe(t2);
+  });
+});
+
+describe('unwrapSealedToken', () => {
+  const sealingKey = Buffer.alloc(32, 7);
+  const payload = {
+    appId: 'app_abc',
+    tossUserKey: 'u_42',
+    tossAt: 'TOSS_AT_OPAQUE',
+    tossRt: 'TOSS_RT_OPAQUE',
+    tossAtExp: 1735689600,
+    issuedAt: 1735686000,
+  };
+
+  it('roundtrips a wrapped token', () => {
+    const tok = wrapSealedToken({ sealingKey, sealingKeyVersion: 1, payload });
+    const got = unwrapSealedToken({
+      token: tok,
+      resolveKey: (version) => {
+        expect(version).toBe(1);
+        return sealingKey;
+      },
+      expectedAppId: payload.appId,
+      expectedTossUserKey: payload.tossUserKey,
+    });
+    expect(got).toEqual(payload);
+  });
+
+  it('rejects tampered ciphertext', () => {
+    const tok = wrapSealedToken({ sealingKey, sealingKeyVersion: 1, payload });
+    const body = Buffer.from(tok.slice(4), 'base64url');
+    body[20] = (body[20]! ^ 0x01) & 0xff;
+    const tampered = `ait_${body.toString('base64url')}`;
+    expect(() =>
+      unwrapSealedToken({
+        token: tampered,
+        resolveKey: () => sealingKey,
+        expectedAppId: payload.appId,
+        expectedTossUserKey: payload.tossUserKey,
+      }),
+    ).toThrow(/SEALED_TOKEN_TAMPERED/);
+  });
+
+  it('rejects swap to different app via expectedAppId AAD mismatch', () => {
+    const tok = wrapSealedToken({ sealingKey, sealingKeyVersion: 1, payload });
+    expect(() =>
+      unwrapSealedToken({
+        token: tok,
+        resolveKey: () => sealingKey,
+        expectedAppId: 'app_other',
+        expectedTossUserKey: payload.tossUserKey,
+      }),
+    ).toThrow(/SEALED_TOKEN_TAMPERED/);
+  });
+
+  it('rejects token without ait_ prefix', () => {
+    expect(() =>
+      unwrapSealedToken({
+        token: 'notait_abc',
+        resolveKey: () => sealingKey,
+        expectedAppId: payload.appId,
+        expectedTossUserKey: payload.tossUserKey,
+      }),
+    ).toThrow(/SEALED_TOKEN_BAD_FORMAT/);
   });
 });

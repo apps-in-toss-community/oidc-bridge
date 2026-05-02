@@ -7,8 +7,13 @@
   "engines": {
     "node": ">=24"
   },
+  "bin": {
+    "oidc-bridge": "./dist/index.mjs"
+  },
   "scripts": {
-    "build": "tsdown src/server.ts --format esm",
+    "build": "pnpm build:server && pnpm build:cli",
+    "build:server": "tsdown src/server.ts --format esm",
+    "build:cli": "tsdown cli/index.ts --format esm --no-clean",
     "start": "node dist/server.mjs",
     "dev": "tsdown src/server.ts --format esm --watch",
     "typecheck": "tsc --noEmit",

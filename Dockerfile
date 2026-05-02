@@ -18,6 +18,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY cli ./cli
 RUN pnpm build
 
 # Prune to production deps for the runtime stage.

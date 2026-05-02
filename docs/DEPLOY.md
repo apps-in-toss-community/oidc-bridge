@@ -158,25 +158,26 @@ runtime config — there is no `.env` to edit on the VPS by hand.
 | `VULTR_USER` | `deploy` |
 | `VULTR_SSH_KEY` | private key whose public half is in `~deploy/.ssh/authorized_keys` |
 | `ACME_EMAIL` | Let's Encrypt registration email for Caddy |
-| `TOSS_CLIENT_ID` | Toss partner OAuth2 client_id |
-| `TOSS_CLIENT_SECRET` | Toss partner OAuth2 client_secret |
+| `MASTER_KEY_1_HEX` | 32-byte hex master key (Phase 1 sealing keys). `openssl rand -hex 32` |
+| `OIDC_ISSUER` | Issuer URL exposed in `/.well-known/openid-configuration` |
+| `OIDC_ACTIVE_KID` | Kid of the currently-signing JWKS key (e.g. `k1`) |
+| `OIDC_SIGNING_KEY_K1_PEM` | RS256 PEM for `kid=k1` (rename if `OIDC_ACTIVE_KID` differs) |
+
+Per-app Toss mTLS material lives in the database (`apps.mtls_*_enc`),
+not in env. Register apps via the admin REST or CLI after first boot.
 
 ### Optional (only emitted into `.env` when set)
 
 | Name | When to set it |
 |---|---|
-| `TOSS_API_BASE` | Override the default `https://apps-in-toss-api.toss.im` |
-| `RATE_LIMIT_ENABLED` | `true` on the public instance, `false` on self-hosts |
-| `ALLOWED_ORIGINS` | M3 CORS allow-list |
-| `OIDC_ISSUER` | Issuer URL exposed in `/.well-known/openid-configuration` |
-| `OIDC_SIGNING_KEY` | RSA-2048 PEM for ID token signing |
-| `OIDC_MASTER_KEY` | base64-32B HKDF master for sealing keys |
-| `ADMIN_TOKEN` | Bearer token for `/admin/*` |
-| `TENANT_STORE` | `fs` (default) \| `gcpsm` |
-| `BRIDGE_DATA_DIR` | fs-store root, default `/data` in the image |
-| `FIREBASE_SERVICE_ACCOUNT` | Self-host only: raw JSON or base64. Public instance leaves this unset → `/firebase-token` returns 501. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Self-host alternative: path to JSON service account in the image |
-| `TOSS_PII_DECRYPTION_KEY` | Self-host only: PII passthrough decryption key |
+| `STORAGE` | `sqlite` (default) \| `pg` |
+| `SQLITE_PATH` | Override the default `/app/data/oidc-bridge.sqlite` |
+| `DATABASE_URL` | Required when `STORAGE=pg` |
+| `MASTER_KEY_PROVIDER` | `env` (default) \| `file` \| `gcpsm` |
+| `MASTER_KEY_DIR` | Required when `MASTER_KEY_PROVIDER=file` |
+| `ID_TOKEN_TTL_SECONDS` | Override default `3600` |
+| `OIDC_DEFAULT_SCOPE` | Override default `"openid profile user_key"` |
+| `OIDC_SIGNING_KEY_K2_PEM` | Second key during a rotation overlap window — see [`RUNBOOK.md`](./RUNBOOK.md) |
 
 `VULTR_SSH_KEY` must be the full PEM block (including the
 `-----BEGIN ... PRIVATE KEY-----` header). Generate a dedicated key for
@@ -188,10 +189,9 @@ ssh-copy-id -i gha-deploy.pub deploy@<VPS_IP>
 # Paste the contents of `gha-deploy` into the VULTR_SSH_KEY secret.
 ```
 
-PEM blocks (`OIDC_SIGNING_KEY`, `VULTR_SSH_KEY`) and JSON service
-accounts (`FIREBASE_SERVICE_ACCOUNT`) can be pasted as-is — the workflow
-escapes `\` and `"` so newlines and special chars survive the round-trip
-into `.env`.
+PEM blocks (`OIDC_SIGNING_KEY_K1_PEM`, `VULTR_SSH_KEY`) can be pasted
+as-is — the workflow escapes `\` and `"` so newlines survive the
+round-trip into `.env`.
 
 `GITHUB_TOKEN` is provided automatically; no GHCR PAT is needed.
 

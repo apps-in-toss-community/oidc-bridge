@@ -1,10 +1,18 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { createApp } from '../app.js';
 import type { Storage } from '../storage/interface.js';
 import { MockTossAdapter } from '../toss/mock-adapter.js';
 import { createInMemoryRevocationStore, type RevocationStore } from './revocation-store.js';
 import { revokeRoute } from './revoke-route.js';
 import { wrapSealedToken } from './sealed-token.js';
+import { createSigningKeyRegistry } from './signing-keys.js';
+
+function genPem(): string {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  return privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+}
 
 interface FakeAppRow {
   id: string;
@@ -173,5 +181,37 @@ describe('POST /oidc/revoke', () => {
     });
     expect(res.status).toBe(200);
     expect(store.isRevoked({ appId: baseApp.id, token: tampered })).toBe(false);
+  });
+});
+
+describe('createApp wiring (revoke)', () => {
+  it('mounts /oidc/revoke via createApp', async () => {
+    const reg = await createSigningKeyRegistry({
+      activeKid: 'k1',
+      signingKeys: [{ kid: 'k1', pem: genPem() }],
+    });
+    const app = createApp({
+      oidc: {
+        config: {
+          issuer: 'https://oidc-bridge.aitc.dev',
+          activeKid: 'k1',
+          signingKeys: [{ kid: 'k1', pem: 'unused-here' }],
+          idTokenTtlSeconds: 3600,
+          defaultScope: 'openid profile user_key',
+        },
+        signingKeyRegistry: reg,
+        storage: fakeStorage(baseApp),
+        tossAdapter: new MockTossAdapter(),
+        resolveAppSealingKey: async () => sealingKey,
+        revocationStore: createInMemoryRevocationStore(),
+        now: () => 1735686000,
+      },
+    });
+    const res = await app.request('/oidc/revoke', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'token=not-ait',
+    });
+    expect(res.status).toBe(200);
   });
 });

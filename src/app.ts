@@ -4,6 +4,7 @@ import type { OidcConfig } from './config.js';
 import { discoveryRoute } from './oidc/discovery-route.js';
 import { jwksRoute } from './oidc/jwks-route.js';
 import type { RevocationStore } from './oidc/revocation-store.js';
+import { revokeRoute } from './oidc/revoke-route.js';
 import type { SigningKeyRegistry } from './oidc/signing-keys.js';
 import { tokenRoute } from './oidc/token-route.js';
 import { createTokenService } from './oidc/token-service.js';
@@ -58,6 +59,15 @@ export function createApp(opts: CreateAppOptions = {}): Hono {
     app.route(
       '/',
       userinfoRoute({
+        storage: opts.oidc.storage,
+        tossAdapter: opts.oidc.tossAdapter,
+        resolveAppSealingKey: opts.oidc.resolveAppSealingKey,
+        revocationStore: opts.oidc.revocationStore,
+      }),
+    );
+    app.route(
+      '/',
+      revokeRoute({
         storage: opts.oidc.storage,
         tossAdapter: opts.oidc.tossAdapter,
         resolveAppSealingKey: opts.oidc.resolveAppSealingKey,

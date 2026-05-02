@@ -177,7 +177,7 @@ not in env. Register apps via the admin REST or CLI after first boot.
 | `MASTER_KEY_DIR` | Required when `MASTER_KEY_PROVIDER=file` |
 | `ID_TOKEN_TTL_SECONDS` | Override default `3600` |
 | `OIDC_DEFAULT_SCOPE` | Override default `"openid profile user_key"` |
-| `OIDC_SIGNING_KEY_K2_PEM` | Second key during a rotation overlap window — see `docs/RUNBOOK.md` |
+| `OIDC_SIGNING_KEY_K2_PEM` | Second key during a rotation overlap window — see [`RUNBOOK.md`](./RUNBOOK.md) |
 
 `VULTR_SSH_KEY` must be the full PEM block (including the
 `-----BEGIN ... PRIVATE KEY-----` header). Generate a dedicated key for

@@ -11,7 +11,7 @@ name: Deploy
 #   MASTER_KEY_1_HEX          — 32-byte hex master key (Phase 1 sealing keys)
 #   OIDC_ISSUER               — issuer URL exposed in /.well-known/openid-configuration
 #   OIDC_ACTIVE_KID           — kid of the currently-signing JWKS key
-#   OIDC_SIGNING_KEY_K1_PEM   — RS256 PEM for kid=k1 (rename if OIDC_ACTIVE_KID differs)
+#   OIDC_SIGNING_KEY_K1_PEM   — RS256 PEM for kid=k1 (slot name is fixed; see docs/RUNBOOK.md for rotation)
 #
 # Optional repository secrets (only emitted into .env when set):
 #   STORAGE, SQLITE_PATH, DATABASE_URL,

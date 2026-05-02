@@ -453,7 +453,10 @@ export const apps = sqliteTable(
       .notNull()
       .default(false),
     createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
-    updatedAt: tsCol('updated_at').notNull().default(sql`(unixepoch() * 1000)`),
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`)
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     workspaceIdx: index('apps_workspace_idx').on(t.workspaceId),

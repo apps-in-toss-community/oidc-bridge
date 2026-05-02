@@ -15,16 +15,26 @@
     "test": "vitest run",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "db:generate:pg": "drizzle-kit generate --config=drizzle.config.pg.ts",
+    "db:generate:sqlite": "drizzle-kit generate --config=drizzle.config.sqlite.ts",
+    "db:migrate:pg": "drizzle-kit migrate --config=drizzle.config.pg.ts",
+    "db:migrate:sqlite": "drizzle-kit migrate --config=drizzle.config.sqlite.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "better-sqlite3": "^11.10.0",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.6.12",
+    "pg": "^8.20.0",
     "pino": "^9.14.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.12",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "drizzle-kit": "^0.30.6",
     "pino-pretty": "^11.3.0",
     "tsdown": "^0.21.7",
     "typescript": "^6.0.2",

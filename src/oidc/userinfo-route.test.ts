@@ -1,10 +1,18 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { createApp } from '../app.js';
 import type { Storage } from '../storage/interface.js';
 import { MockTossAdapter } from '../toss/mock-adapter.js';
 import { createInMemoryRevocationStore, type RevocationStore } from './revocation-store.js';
 import { wrapSealedToken } from './sealed-token.js';
+import { createSigningKeyRegistry } from './signing-keys.js';
 import { userinfoRoute } from './userinfo-route.js';
+
+function genPem(): string {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  return privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+}
 
 interface FakeAppRow {
   id: string;
@@ -149,5 +157,36 @@ describe('GET /oidc/userinfo error cases', () => {
     });
     expect(res.status).toBe(502);
     expect(((await res.json()) as { error: string }).error).toBe('upstream_error');
+  });
+});
+
+describe('createApp wiring (userinfo)', () => {
+  it('mounts /oidc/userinfo via createApp', async () => {
+    const reg = await createSigningKeyRegistry({
+      activeKid: 'k1',
+      signingKeys: [{ kid: 'k1', pem: genPem() }],
+    });
+    const app = createApp({
+      oidc: {
+        config: {
+          issuer: 'https://oidc-bridge.aitc.dev',
+          activeKid: 'k1',
+          signingKeys: [{ kid: 'k1', pem: 'unused-here' }],
+          idTokenTtlSeconds: 3600,
+          defaultScope: 'openid profile user_key',
+        },
+        signingKeyRegistry: reg,
+        storage: fakeStorage(baseApp),
+        tossAdapter: new MockTossAdapter(),
+        resolveAppSealingKey: async () => sealingKey,
+        revocationStore: createInMemoryRevocationStore(),
+        now: () => 1735686000,
+      },
+    });
+    const at = makeAt(baseApp);
+    const res = await app.request('/oidc/userinfo', {
+      headers: { authorization: `Bearer ${at}` },
+    });
+    expect(res.status).toBe(200);
   });
 });

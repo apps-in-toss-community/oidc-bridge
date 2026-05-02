@@ -3,9 +3,11 @@ import { type MountAdminRoutesOptions, mountAdminRoutes } from './apps/routes.js
 import type { OidcConfig } from './config.js';
 import { discoveryRoute } from './oidc/discovery-route.js';
 import { jwksRoute } from './oidc/jwks-route.js';
+import type { RevocationStore } from './oidc/revocation-store.js';
 import type { SigningKeyRegistry } from './oidc/signing-keys.js';
 import { tokenRoute } from './oidc/token-route.js';
 import { createTokenService } from './oidc/token-service.js';
+import { userinfoRoute } from './oidc/userinfo-route.js';
 import type { Storage } from './storage/interface.js';
 import type { TossAdapter } from './toss/adapter.js';
 
@@ -17,6 +19,7 @@ export interface CreateAppOptions {
     storage: Storage;
     tossAdapter: TossAdapter;
     resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+    revocationStore: RevocationStore;
     now?: () => number;
   };
 }
@@ -50,6 +53,15 @@ export function createApp(opts: CreateAppOptions = {}): Hono {
         storage: opts.oidc.storage,
         tokenService,
         resolveAppSealingKey: opts.oidc.resolveAppSealingKey,
+      }),
+    );
+    app.route(
+      '/',
+      userinfoRoute({
+        storage: opts.oidc.storage,
+        tossAdapter: opts.oidc.tossAdapter,
+        resolveAppSealingKey: opts.oidc.resolveAppSealingKey,
+        revocationStore: opts.oidc.revocationStore,
       }),
     );
   }

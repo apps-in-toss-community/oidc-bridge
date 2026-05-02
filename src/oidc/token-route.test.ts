@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '../app.js';
 import type { Storage } from '../storage/interface.js';
 import { MockTossAdapter } from '../toss/mock-adapter.js';
+import { createInMemoryRevocationStore } from './revocation-store.js';
 import { createSigningKeyRegistry } from './signing-keys.js';
 import { tokenRoute } from './token-route.js';
 import { createTokenService } from './token-service.js';
@@ -322,6 +323,7 @@ describe('createApp wiring', () => {
         storage: fakeStorage(fakeApp),
         tossAdapter: new MockTossAdapter(),
         resolveAppSealingKey: async () => sealingKey,
+        revocationStore: createInMemoryRevocationStore(),
         now: () => 1735686000,
       },
     });

@@ -6,6 +6,7 @@ import { loadOidcConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { createMasterKeyProvider } from './master-keys/index.js';
 import { createAppSealingKeyResolver } from './oidc/app-sealing-key.js';
+import { createInMemoryRevocationStore } from './oidc/revocation-store.js';
 import { createSigningKeyRegistry } from './oidc/signing-keys.js';
 import type { Storage } from './storage/interface.js';
 import { createPgStorage } from './storage/pg.js';
@@ -41,6 +42,8 @@ async function main() {
   });
   const resolveAppSealingKey = createAppSealingKeyResolver({ provider: masterKeyProvider });
 
+  const revocationStore = createInMemoryRevocationStore();
+
   const app = createApp({
     oidc: {
       config: oidcConfig,
@@ -48,6 +51,7 @@ async function main() {
       storage,
       tossAdapter: new MockTossAdapter(),
       resolveAppSealingKey,
+      revocationStore,
     },
   });
 

@@ -21,7 +21,7 @@ export interface CreateWorkspaceInput {
 }
 
 export interface UpdateWorkspaceInput {
-  name?: string;
+  name?: string | undefined;
 }
 
 export interface CreateAppInput {
@@ -48,8 +48,8 @@ export interface RotateSecretResult {
 }
 
 export interface UpdateAppInput {
-  displayTitle?: string;
-  allowedOrigins?: string[];
+  displayTitle?: string | undefined;
+  allowedOrigins?: string[] | undefined;
 }
 
 export interface Service {
@@ -139,13 +139,15 @@ export function createService(opts: CreateServiceOptions): Service {
     },
     async update(ctx, id, input) {
       await getOwnedWorkspace(ctx, id);
-      const updated = await storage.updateWorkspace(id, input);
+      const cleaned: { name?: string } = {};
+      if (input.name !== undefined) cleaned.name = input.name;
+      const updated = await storage.updateWorkspace(id, cleaned);
       await appendAudit({
         storage,
         actor: ctx.actorUserId,
         action: 'workspace.update',
         target: id,
-        details: input,
+        details: { ...cleaned },
       });
       return updated;
     },
@@ -206,13 +208,16 @@ export function createService(opts: CreateServiceOptions): Service {
     },
     async update(ctx, id, patch) {
       await getOwnedApp(ctx, id);
-      const updated = await storage.updateApp(id, patch);
+      const cleaned: { displayTitle?: string; allowedOrigins?: string[] } = {};
+      if (patch.displayTitle !== undefined) cleaned.displayTitle = patch.displayTitle;
+      if (patch.allowedOrigins !== undefined) cleaned.allowedOrigins = patch.allowedOrigins;
+      const updated = await storage.updateApp(id, cleaned);
       await appendAudit({
         storage,
         actor: ctx.actorUserId,
         action: 'app.update',
         target: id,
-        details: patch,
+        details: { ...cleaned },
       });
       return updated;
     },

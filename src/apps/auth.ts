@@ -1,3 +1,4 @@
+import type { MiddlewareHandler } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { User } from '../storage/types.js';
 import type { Service } from './service.js';
@@ -28,7 +29,7 @@ function forbidden() {
   );
 }
 
-export function adminAuth(opts: AdminAuthOptions) {
+export function adminAuth(opts: AdminAuthOptions): MiddlewareHandler {
   return createMiddleware(async (c, next) => {
     const header = c.req.header('authorization');
     if (!header?.toLowerCase().startsWith('bearer ')) {

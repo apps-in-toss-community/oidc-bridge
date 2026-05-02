@@ -19,6 +19,7 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src ./src
 COPY cli ./cli
+COPY drizzle ./drizzle
 RUN pnpm build
 
 # Prune to production deps for the runtime stage.
@@ -38,6 +39,7 @@ USER node
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/dist ./dist
 COPY --chown=node:node --from=builder /app/package.json ./package.json
+COPY --chown=node:node --from=builder /app/drizzle ./drizzle
 
 EXPOSE 8080
 

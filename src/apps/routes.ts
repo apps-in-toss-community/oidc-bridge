@@ -11,6 +11,7 @@ export interface MountAdminRoutesOptions {
   masterKeyProvider: MasterKeyProvider;
   activeMasterKeyVersion: () => number;
   stage: () => Stage;
+  onUnexpectedError?: (err: unknown) => void;
 }
 
 const CreateWorkspaceSchema = z.object({ name: z.string().min(1) });
@@ -75,13 +76,15 @@ function ctxFromHono(c: Context): ServiceCtx {
   return { actorUserId: user.id };
 }
 
-function handleError(err: unknown) {
+function handleError(err: unknown, onUnexpectedError?: (err: unknown) => void) {
   if (err instanceof NotFoundError) {
     return Response.json({ error: 'not_found', error_description: err.message }, { status: 404 });
   }
   if (err instanceof ConflictError) {
     return Response.json({ error: 'conflict', error_description: err.message }, { status: 409 });
   }
+  if (onUnexpectedError) onUnexpectedError(err);
+  else console.error('admin route error', err);
   return Response.json(
     { error: 'server_error', error_description: 'unexpected error' },
     { status: 500 },
@@ -102,7 +105,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       const w = await opts.service.workspaces.create(ctxFromHono(c), parsed.data);
       return c.json(workspaceJson(w), 201);
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -116,7 +119,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       const w = await opts.service.workspaces.get(ctxFromHono(c), c.req.param('id'));
       return c.json(workspaceJson(w));
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -134,7 +137,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       );
       return c.json(workspaceJson(w));
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -143,7 +146,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       await opts.service.workspaces.delete(ctxFromHono(c), c.req.param('id'));
       return c.body(null, 204);
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -176,7 +179,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
         201,
       );
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -185,7 +188,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       const list = await opts.service.apps.list(ctxFromHono(c), c.req.param('wsId'));
       return c.json(list.map(appJson));
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -194,7 +197,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       const a = await opts.service.apps.get(ctxFromHono(c), c.req.param('id'));
       return c.json(appJson(a));
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -208,7 +211,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       const a = await opts.service.apps.update(ctxFromHono(c), c.req.param('id'), parsed.data);
       return c.json(appJson(a));
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -217,7 +220,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       await opts.service.apps.delete(ctxFromHono(c), c.req.param('id'));
       return c.body(null, 204);
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -226,7 +229,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       const r = await opts.service.apps.rotateSecret(ctxFromHono(c), c.req.param('id'));
       return c.json({ app: appJson(r.app), clientSecret: r.clientSecret });
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -244,7 +247,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       );
       return c.json(appJson(a));
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -258,7 +261,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       const r = await opts.service.apiTokens.create(ctxFromHono(c), parsed.data);
       return c.json({ token: apiTokenJson(r.token), plaintext: r.plaintext }, 201);
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 
@@ -272,7 +275,7 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
       await opts.service.apiTokens.delete(ctxFromHono(c), c.req.param('id'));
       return c.body(null, 204);
     } catch (err) {
-      return handleError(err);
+      return handleError(err, opts.onUnexpectedError);
     }
   });
 }

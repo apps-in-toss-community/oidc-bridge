@@ -44,6 +44,15 @@ describe('service: workspaces', () => {
     expect(updated.name).toBe('renamed');
   });
 
+  it('skips audit + storage write on empty workspace patch', async () => {
+    const w = await svc.workspaces.create(ctx, { name: 'first' });
+    const before = await storage.listAudit();
+    const result = await svc.workspaces.update(ctx, w.id, {});
+    expect(result.id).toBe(w.id);
+    const after = await storage.listAudit();
+    expect(after.length).toBe(before.length);
+  });
+
   it('deletes workspace', async () => {
     const w = await svc.workspaces.create(ctx, { name: 'first' });
     await svc.workspaces.delete(ctx, w.id);
@@ -134,6 +143,48 @@ describe('service: apps', () => {
     const rotated = await svc.apps.rotateSecret(ctx, created.app.id);
     expect(rotated.clientSecret).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(rotated.app.clientSecretHashes).toHaveLength(2);
+  });
+
+  it('skips audit + storage write on empty app patch', async () => {
+    const w = await setupWorkspace();
+    const created = await svc.apps.create(ctx, {
+      workspaceId: w.id,
+      appIdToss: 'mini-noop',
+      displayTitle: 'X',
+      mtlsCert: Buffer.from('cert'),
+      mtlsKey: Buffer.from('key'),
+      allowedOrigins: [],
+      sealingKeyVersion: 1,
+      masterKey,
+      stage,
+    });
+    const before = await storage.listAudit();
+    const result = await svc.apps.update(ctx, created.app.id, {});
+    expect(result.id).toBe(created.app.id);
+    expect(result.updatedAt.getTime()).toBe(created.app.updatedAt.getTime());
+    const after = await storage.listAudit();
+    expect(after.length).toBe(before.length);
+  });
+
+  it('rotate-secret keeps overlap window bounded to 2 across repeated rotations', async () => {
+    const w = await setupWorkspace();
+    const created = await svc.apps.create(ctx, {
+      workspaceId: w.id,
+      appIdToss: 'mini-rot',
+      displayTitle: 'X',
+      mtlsCert: Buffer.from('cert'),
+      mtlsKey: Buffer.from('key'),
+      allowedOrigins: [],
+      sealingKeyVersion: 1,
+      masterKey,
+      stage,
+    });
+    const r1 = await svc.apps.rotateSecret(ctx, created.app.id);
+    const r2 = await svc.apps.rotateSecret(ctx, created.app.id);
+    const r3 = await svc.apps.rotateSecret(ctx, created.app.id);
+    expect(r1.app.clientSecretHashes).toHaveLength(2);
+    expect(r2.app.clientSecretHashes).toHaveLength(2);
+    expect(r3.app.clientSecretHashes).toHaveLength(2);
   });
 
   it('refuses cross-workspace access', async () => {

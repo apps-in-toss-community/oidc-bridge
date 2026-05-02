@@ -138,9 +138,10 @@ export function createService(opts: CreateServiceOptions): Service {
       return getOwnedWorkspace(ctx, id);
     },
     async update(ctx, id, input) {
-      await getOwnedWorkspace(ctx, id);
+      const existing = await getOwnedWorkspace(ctx, id);
       const cleaned: { name?: string } = {};
       if (input.name !== undefined) cleaned.name = input.name;
+      if (Object.keys(cleaned).length === 0) return existing;
       const updated = await storage.updateWorkspace(id, cleaned);
       await appendAudit({
         storage,
@@ -207,10 +208,11 @@ export function createService(opts: CreateServiceOptions): Service {
       return getOwnedApp(ctx, id);
     },
     async update(ctx, id, patch) {
-      await getOwnedApp(ctx, id);
+      const existing = await getOwnedApp(ctx, id);
       const cleaned: { displayTitle?: string; allowedOrigins?: string[] } = {};
       if (patch.displayTitle !== undefined) cleaned.displayTitle = patch.displayTitle;
       if (patch.allowedOrigins !== undefined) cleaned.allowedOrigins = patch.allowedOrigins;
+      if (Object.keys(cleaned).length === 0) return existing;
       const updated = await storage.updateApp(id, cleaned);
       await appendAudit({
         storage,
@@ -230,8 +232,9 @@ export function createService(opts: CreateServiceOptions): Service {
       const existing = await getOwnedApp(ctx, id);
       const clientSecret = generateClientSecret();
       const hash = await hashClientSecret(clientSecret);
+      const previous = existing.clientSecretHashes.slice(-1);
       const updated = await storage.updateApp(id, {
-        clientSecretHashes: [...existing.clientSecretHashes, hash],
+        clientSecretHashes: [...previous, hash],
       });
       await appendAudit({
         storage,

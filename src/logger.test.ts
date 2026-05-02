@@ -68,6 +68,43 @@ describe('createLogger', () => {
     expect(line).toContain('[Redacted]');
   });
 
+  it('redacts authorization headers on req/res', () => {
+    const { stream, lines } = captureLogs();
+    const log = createLogger({ destination: stream, mode: 'json' });
+
+    log.info(
+      {
+        req: {
+          method: 'POST',
+          url: '/oidc/token',
+          headers: {
+            authorization: 'Bearer ait_secret',
+            'content-type': 'application/json',
+          },
+        },
+        res: {
+          headers: { authorization: 'Bearer ait_secret' },
+        },
+      },
+      'request with auth header',
+    );
+
+    const line = lines.join('');
+    expect(line).not.toContain('ait_secret');
+    expect(line).toContain('[Redacted]');
+  });
+
+  it('redacts top-level token form field', () => {
+    const { stream, lines } = captureLogs();
+    const log = createLogger({ destination: stream, mode: 'json' });
+
+    log.info({ token: 'ait_secret', token_type_hint: 'access_token' }, 'revoke body');
+
+    const line = lines.join('');
+    expect(line).not.toContain('ait_secret');
+    expect(line).toContain('[Redacted]');
+  });
+
   it('emits valid JSON in json mode', () => {
     const { stream, lines } = captureLogs();
     const log = createLogger({ destination: stream, mode: 'json' });

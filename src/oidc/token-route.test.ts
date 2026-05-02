@@ -277,6 +277,22 @@ describe('POST /oidc/token error cases (public client)', () => {
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: string }).error).toBe('app_not_verified');
   });
+
+  it('403 app_not_verified when ownership is lapsed', async () => {
+    const lapsedApp = { ...baseApp, ownershipStatus: 'lapsed' as const };
+    const h = await buildHarness({ app: lapsedApp });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: string }).error).toBe('app_not_verified');
+  });
 });
 
 describe('createApp wiring', () => {

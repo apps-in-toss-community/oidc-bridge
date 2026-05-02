@@ -49,6 +49,7 @@ async function buildHarness(opts: { app: FakeAppRow }) {
     tokenRoute({
       storage: fakeStorage(opts.app),
       tokenService,
+      resolveAppSealingKey: async () => sealingKey,
     }),
   );
   return honoApp;
@@ -103,5 +104,69 @@ describe('POST /oidc/token (public client)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { access_token: string };
     expect(body.access_token).toMatch(/^ait_/);
+  });
+});
+
+describe('POST /oidc/token (refresh_token)', () => {
+  const app: FakeAppRow = {
+    id: 'app_abc',
+    clientId: 'app_abc',
+    sealingKeyVersion: 1,
+    allowedOrigins: ['https://app.example.com'],
+    ownershipStatus: 'verified',
+  };
+
+  it('happy refresh after authorization_code', async () => {
+    const h = await buildHarness({ app });
+    const firstRes = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    const first = (await firstRes.json()) as { refresh_token: string; access_token: string };
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: first.refresh_token,
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { access_token: string };
+    expect(body.access_token).toMatch(/^ait_/);
+    expect(body.access_token).not.toBe(first.access_token);
+  });
+
+  it('refresh with tampered token returns 401 invalid_grant', async () => {
+    const h = await buildHarness({ app });
+    const firstRes = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    const first = (await firstRes.json()) as { refresh_token: string };
+    const tampered = `${first.refresh_token.slice(0, -4)}AAAA`;
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: tampered,
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('invalid_grant');
   });
 });

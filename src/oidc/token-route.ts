@@ -3,12 +3,14 @@ import { appendAudit } from '../apps/audit.js';
 import type { Storage } from '../storage/interface.js';
 import { toOAuthError } from './errors.js';
 import { originIsAllowed } from './origin-check.js';
+import { peekSealedTokenVersion, unwrapSealedToken } from './sealed-token.js';
 import { tokenBody } from './token-schemas.js';
 import type { TokenService } from './token-service.js';
 
 export interface TokenRouteOpts {
   storage: Storage;
   tokenService: TokenService;
+  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
 }
 
 export function tokenRoute(opts: TokenRouteOpts) {
@@ -77,12 +79,43 @@ export function tokenRoute(opts: TokenRouteOpts) {
         return c.json(out);
       }
 
-      // refresh_token path is implemented in Task 17.
-      const e = toOAuthError({
-        code: 'unsupported_grant_type',
-        description: 'refresh_token not yet implemented',
+      // refresh_token branch
+      let version: number;
+      try {
+        version = peekSealedTokenVersion(body.refresh_token);
+      } catch {
+        const e = toOAuthError({ code: 'invalid_grant', description: 'refresh_token format' });
+        return c.json(e.body, e.status as never);
+      }
+
+      let unwrapped: ReturnType<typeof unwrapSealedToken>;
+      try {
+        const sealingKey = await opts.resolveAppSealingKey({
+          appId: appRow.id,
+          sealingKeyVersion: version,
+        });
+        unwrapped = unwrapSealedToken({
+          token: body.refresh_token,
+          resolveKey: () => sealingKey,
+          expectedAppId: appRow.id,
+        });
+      } catch {
+        const e = toOAuthError({ code: 'invalid_grant', description: 'refresh_token rejected' });
+        return c.json(e.body, e.status as never);
+      }
+
+      const out = await opts.tokenService.refresh({
+        app: { id: appRow.id, clientId: appRow.clientId, sealingKeyVersion: version },
+        unwrappedRt: { tossRt: unwrapped.tossRt, tossUserKey: unwrapped.tossUserKey },
       });
-      return c.json(e.body, e.status as never);
+      await appendAudit({
+        storage: opts.storage,
+        actor: appRow.id,
+        action: 'oidc.token.refresh',
+        target: appRow.id,
+        details: {},
+      });
+      return c.json(out);
     } catch (err) {
       const oe = toOAuthError(err as Error);
       return c.json(oe.body, oe.status as never);

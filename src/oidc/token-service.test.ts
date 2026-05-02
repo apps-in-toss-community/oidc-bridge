@@ -39,7 +39,6 @@ describe('tokenService.authorizationCode', () => {
       token: out.access_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'app_abc',
-      expectedTossUserKey: '42',
     });
     expect(at.tossAt).toBe('TOSS_AT_OPAQUE_FIXTURE');
     expect(at.tossRt).toBe('TOSS_RT_OPAQUE_FIXTURE');
@@ -90,7 +89,6 @@ describe('tokenService.refresh', () => {
       token: first.refresh_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'a',
-      expectedTossUserKey: '42',
     });
     const second = await service.refresh({
       app: { id: 'a', clientId: 'a', sealingKeyVersion: 1 },
@@ -100,7 +98,6 @@ describe('tokenService.refresh', () => {
       token: second.access_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'a',
-      expectedTossUserKey: '42',
     });
     expect(secondUnwrapped.tossAt).toBe('TOSS_AT_OPAQUE_REFRESHED');
     expect(secondUnwrapped.tossRt).toBe('TOSS_RT_OPAQUE_REFRESHED');

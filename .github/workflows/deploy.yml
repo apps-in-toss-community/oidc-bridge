@@ -4,18 +4,23 @@ name: Deploy
 # the community Vultr Seoul VPS and pull + restart the compose stack.
 #
 # Required repository secrets (see docs/DEPLOY.md):
-#   VULTR_HOST          — VPS IPv4 / hostname
-#   VULTR_USER          — SSH user with docker access (e.g. `deploy`)
-#   VULTR_SSH_KEY       — private key matching an authorized_keys entry on the VPS
-#   ACME_EMAIL          — Let's Encrypt registration email for Caddy
-#   TOSS_CLIENT_ID      — Toss partner OAuth2 client_id
-#   TOSS_CLIENT_SECRET  — Toss partner OAuth2 client_secret
+#   VULTR_HOST                — VPS IPv4 / hostname
+#   VULTR_USER                — SSH user with docker access (e.g. `deploy`)
+#   VULTR_SSH_KEY             — private key matching an authorized_keys entry on the VPS
+#   ACME_EMAIL                — Let's Encrypt registration email for Caddy
+#   MASTER_KEY_1_HEX          — 32-byte hex master key (Phase 1 sealing keys)
+#   OIDC_ISSUER               — issuer URL exposed in /.well-known/openid-configuration
+#   OIDC_ACTIVE_KID           — kid of the currently-signing JWKS key
+#   OIDC_SIGNING_KEY_K1_PEM   — RS256 PEM for kid=k1 (rename if OIDC_ACTIVE_KID differs)
 #
 # Optional repository secrets (only emitted into .env when set):
-#   TOSS_API_BASE, RATE_LIMIT_ENABLED, ALLOWED_ORIGINS,
-#   FIREBASE_SERVICE_ACCOUNT, GOOGLE_APPLICATION_CREDENTIALS,
-#   OIDC_SIGNING_KEY, OIDC_ISSUER, OIDC_MASTER_KEY, ADMIN_TOKEN,
-#   TENANT_STORE, BRIDGE_DATA_DIR, TOSS_PII_DECRYPTION_KEY
+#   STORAGE, SQLITE_PATH, DATABASE_URL,
+#   MASTER_KEY_PROVIDER, MASTER_KEY_DIR,
+#   ID_TOKEN_TTL_SECONDS, OIDC_DEFAULT_SCOPE,
+#   OIDC_SIGNING_KEY_K2_PEM   — second key during a rotation overlap window
+#
+# Per-app Toss mTLS material lives in the database (apps.mtls_*_enc),
+# not in env. App operators register apps via admin REST or CLI.
 #
 # GHCR auth uses the workflow-scoped GITHUB_TOKEN; no separate secret needed.
 
@@ -91,26 +96,24 @@ jobs:
       - name: Render bridge .env from secrets
         env:
           ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
-          TOSS_CLIENT_ID: ${{ secrets.TOSS_CLIENT_ID }}
-          TOSS_CLIENT_SECRET: ${{ secrets.TOSS_CLIENT_SECRET }}
-          TOSS_API_BASE: ${{ secrets.TOSS_API_BASE }}
-          RATE_LIMIT_ENABLED: ${{ secrets.RATE_LIMIT_ENABLED }}
-          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
-          OIDC_SIGNING_KEY: ${{ secrets.OIDC_SIGNING_KEY }}
+          MASTER_KEY_1_HEX: ${{ secrets.MASTER_KEY_1_HEX }}
           OIDC_ISSUER: ${{ secrets.OIDC_ISSUER }}
-          OIDC_MASTER_KEY: ${{ secrets.OIDC_MASTER_KEY }}
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
-          TENANT_STORE: ${{ secrets.TENANT_STORE }}
-          BRIDGE_DATA_DIR: ${{ secrets.BRIDGE_DATA_DIR }}
-          TOSS_PII_DECRYPTION_KEY: ${{ secrets.TOSS_PII_DECRYPTION_KEY }}
+          OIDC_ACTIVE_KID: ${{ secrets.OIDC_ACTIVE_KID }}
+          OIDC_SIGNING_KEY_K1_PEM: ${{ secrets.OIDC_SIGNING_KEY_K1_PEM }}
+          OIDC_SIGNING_KEY_K2_PEM: ${{ secrets.OIDC_SIGNING_KEY_K2_PEM }}
+          STORAGE: ${{ secrets.STORAGE }}
+          SQLITE_PATH: ${{ secrets.SQLITE_PATH }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MASTER_KEY_PROVIDER: ${{ secrets.MASTER_KEY_PROVIDER }}
+          MASTER_KEY_DIR: ${{ secrets.MASTER_KEY_DIR }}
+          ID_TOKEN_TTL_SECONDS: ${{ secrets.ID_TOKEN_TTL_SECONDS }}
+          OIDC_DEFAULT_SCOPE: ${{ secrets.OIDC_DEFAULT_SCOPE }}
         run: |
           set -euo pipefail
           umask 077
 
           missing=()
-          for var in ACME_EMAIL TOSS_CLIENT_ID TOSS_CLIENT_SECRET; do
+          for var in ACME_EMAIL MASTER_KEY_1_HEX OIDC_ISSUER OIDC_ACTIVE_KID OIDC_SIGNING_KEY_K1_PEM; do
             if [ -z "${!var:-}" ]; then
               missing+=("$var")
             fi
@@ -141,20 +144,18 @@ jobs:
           } >> .env.render
 
           emit ACME_EMAIL
-          emit TOSS_CLIENT_ID
-          emit TOSS_CLIENT_SECRET
-          emit TOSS_API_BASE
-          emit RATE_LIMIT_ENABLED
-          emit ALLOWED_ORIGINS
-          emit FIREBASE_SERVICE_ACCOUNT
-          emit GOOGLE_APPLICATION_CREDENTIALS
-          emit OIDC_SIGNING_KEY
+          emit MASTER_KEY_1_HEX
           emit OIDC_ISSUER
-          emit OIDC_MASTER_KEY
-          emit ADMIN_TOKEN
-          emit TENANT_STORE
-          emit BRIDGE_DATA_DIR
-          emit TOSS_PII_DECRYPTION_KEY
+          emit OIDC_ACTIVE_KID
+          emit OIDC_SIGNING_KEY_K1_PEM
+          emit OIDC_SIGNING_KEY_K2_PEM
+          emit STORAGE
+          emit SQLITE_PATH
+          emit DATABASE_URL
+          emit MASTER_KEY_PROVIDER
+          emit MASTER_KEY_DIR
+          emit ID_TOKEN_TTL_SECONDS
+          emit OIDC_DEFAULT_SCOPE
 
           echo "rendered $(grep -c '^[A-Z]' .env.render) env var(s) into .env.render"
 

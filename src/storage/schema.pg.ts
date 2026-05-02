@@ -80,7 +80,10 @@ export const apps = pgTable(
     ownershipGraceUntil: tsCol('ownership_grace_until'),
     rawTokensEnabled: boolean('raw_tokens_enabled').notNull().default(false),
     createdAt: tsCol('created_at').notNull().defaultNow(),
-    updatedAt: tsCol('updated_at').notNull().defaultNow(),
+    updatedAt: tsCol('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdateFn(() => new Date()),
   },
   (t) => ({
     workspaceIdx: index('apps_workspace_idx').on(t.workspaceId),

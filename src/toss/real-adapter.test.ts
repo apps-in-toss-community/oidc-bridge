@@ -89,4 +89,36 @@ describe('RealTossAdapter', () => {
       adapter.generateToken({ appId: 'a' }, { authorizationCode: 'c' }),
     ).rejects.toMatchObject({ code: 'upstream_error' });
   });
+
+  it('refreshToken happy returns new TokenSet', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toContain('/oauth2/refresh-token');
+      expect(JSON.parse(init?.body as string)).toEqual({ refreshToken: 'rt_old' });
+      return new Response(
+        JSON.stringify({
+          resultType: 'SUCCESS',
+          success: {
+            accessToken: 'at_new',
+            refreshToken: 'rt_new',
+            expiresIn: 3600,
+            scope: 'openid profile',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    const adapter = new RealTossAdapter({
+      apiBase: 'https://x.example',
+      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
+      fetchImpl,
+      buildDispatcher: () => ({}),
+    });
+    const ts = await adapter.refreshToken({ appId: 'a' }, { refreshToken: 'rt_old' });
+    expect(ts).toEqual({
+      accessToken: 'at_new',
+      refreshToken: 'rt_new',
+      expiresIn: 3600,
+      scope: ['openid', 'profile'],
+    });
+  });
 });

@@ -24,6 +24,7 @@ interface TossSuccessTokenBody {
 }
 
 const PATH_GENERATE_TOKEN = '/api-partner/v1/apps-in-toss/user/oauth2/generate-token';
+const PATH_REFRESH_TOKEN = '/api-partner/v1/apps-in-toss/user/oauth2/refresh-token';
 
 export class RealTossAdapter implements TossAdapter {
   private readonly dispatchers = new Map<string, unknown>();
@@ -42,8 +43,12 @@ export class RealTossAdapter implements TossAdapter {
     return this.toTokenSet(body);
   }
 
-  async refreshToken(_ctx: TossAdapterContext, _input: RefreshTokenInput): Promise<TossTokenSet> {
-    throw new TossUpstreamError('upstream_error', 'refreshToken: not implemented yet');
+  async refreshToken(ctx: TossAdapterContext, input: RefreshTokenInput): Promise<TossTokenSet> {
+    const dispatcher = await this.dispatcherFor(ctx.appId);
+    const body = await this.callJson<TossSuccessTokenBody>(PATH_REFRESH_TOKEN, dispatcher, {
+      refreshToken: input.refreshToken,
+    });
+    return this.toTokenSet(body);
   }
 
   async loginMe(_ctx: TossAdapterContext, _input: { accessToken: string }): Promise<LoginMeOutput> {

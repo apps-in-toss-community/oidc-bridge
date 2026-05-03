@@ -127,6 +127,28 @@ describe('createLogger', () => {
     expect(line).toContain('[Redacted]');
   });
 
+  it('redacts password_hash and Set-Cookie headers', () => {
+    const { stream, lines } = captureLogs();
+    const log = createLogger({ destination: stream, mode: 'json' });
+
+    log.info(
+      {
+        password_hash: '$2a$12$REAL_HASH_VALUE',
+        res: {
+          headers: {
+            'set-cookie': '__Host-bridge_session=SECRET_SID_VALUE; Path=/; HttpOnly',
+          },
+        },
+      },
+      'session-set log',
+    );
+
+    const line = lines.join('');
+    expect(line).not.toContain('REAL_HASH_VALUE');
+    expect(line).not.toContain('SECRET_SID_VALUE');
+    expect(line).toContain('[Redacted]');
+  });
+
   it('emits valid JSON in json mode', () => {
     const { stream, lines } = captureLogs();
     const log = createLogger({ destination: stream, mode: 'json' });

@@ -25,12 +25,14 @@ const REDACT_PATHS = [
   'api_token',
   'master_key',
   'password',
+  'password_hash',
   'id_token',
   'code_verifier',
   'code',
   'token',
   'req.headers.authorization',
   'res.headers.authorization',
+  'res.headers["set-cookie"]',
   // Wildcard variants for nested objects.
   '*.client_secret',
   '*.access_token',
@@ -49,6 +51,8 @@ const REDACT_PATHS = [
   '*.code_verifier',
   '*.code',
   '*.token',
+  '*.password',
+  '*.password_hash',
 ];
 
 export function createLogger(opts: CreateLoggerOptions = {}): Logger {

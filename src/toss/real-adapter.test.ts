@@ -1,5 +1,6 @@
+import { Pool } from 'undici';
 import { describe, expect, it, vi } from 'vitest';
-import { RealTossAdapter } from './real-adapter.js';
+import { defaultBuildDispatcher, RealTossAdapter } from './real-adapter.js';
 
 describe('RealTossAdapter', () => {
   it('builds one dispatcher per appId and reuses it', async () => {
@@ -207,5 +208,15 @@ describe('RealTossAdapter', () => {
     await expect(adapter.accessRemove({ appId: 'a' }, { userKey: '42' })).rejects.toMatchObject({
       code: 'upstream_error',
     });
+  });
+
+  it('defaultBuildDispatcher returns an undici Pool with cert+key configured', () => {
+    const pool = defaultBuildDispatcher({
+      certPem: 'CERT_BYTES',
+      keyPem: 'KEY_BYTES',
+      apiBase: 'https://x.example',
+    });
+    expect(pool).toBeInstanceOf(Pool);
+    pool.close();
   });
 });

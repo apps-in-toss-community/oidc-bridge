@@ -1,3 +1,4 @@
+import { Pool } from 'undici';
 import {
   type GenerateTokenInput,
   type LoginMeOutput,
@@ -88,7 +89,10 @@ export class RealTossAdapter implements TossAdapter {
     if (!mtls) {
       throw new TossUpstreamError('upstream_error', `no mtls material for app=${appId}`);
     }
-    const builder = this.deps.buildDispatcher ?? defaultBuildDispatcher;
+    const apiBase = this.deps.apiBase;
+    const builder =
+      this.deps.buildDispatcher ??
+      ((opts: { certPem: string; keyPem: string }) => defaultBuildDispatcher({ ...opts, apiBase }));
     const fresh = builder({ certPem: mtls.certPem, keyPem: mtls.keyPem });
     this.dispatchers.set(appId, fresh);
     return fresh;
@@ -141,8 +145,15 @@ export class RealTossAdapter implements TossAdapter {
   }
 }
 
-function defaultBuildDispatcher(_opts: { certPem: string; keyPem: string }): unknown {
-  // Real implementation lands in Task 7 (undici Pool). The throwing stub
-  // ensures any prod path requires the lazy import to be wired before use.
-  throw new Error('defaultBuildDispatcher not yet wired (Task 7 wires undici)');
+export function defaultBuildDispatcher(opts: {
+  certPem: string;
+  keyPem: string;
+  apiBase: string;
+}): Pool {
+  return new Pool(opts.apiBase, {
+    connect: {
+      cert: opts.certPem,
+      key: opts.keyPem,
+    },
+  });
 }

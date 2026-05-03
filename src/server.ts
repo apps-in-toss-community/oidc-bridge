@@ -68,11 +68,28 @@ export function createMtlsMaterialAccessor(
   };
 }
 
+export interface RunStartupTasksDeps {
+  storage: Storage;
+  now?: () => Date;
+}
+
+export interface StartupTaskResult {
+  purgedSessions: number;
+}
+
+export async function runStartupTasks(deps: RunStartupTasksDeps): Promise<StartupTaskResult> {
+  const now = (deps.now ?? (() => new Date()))();
+  const purgedSessions = await deps.storage.purgeExpiredUserSessions(now);
+  return { purgedSessions };
+}
+
 async function main() {
   const log = createLogger();
   const port = Number(process.env.PORT ?? 8080);
 
   const storage = await openStorage();
+  const startupResult = await runStartupTasks({ storage });
+  log.info({ purgedSessions: startupResult.purgedSessions }, 'startup tasks complete');
   const masterKeyProvider = createMasterKeyProvider();
   const oidcConfig = loadOidcConfig(process.env);
   const tossConfig = loadTossConfig(process.env);

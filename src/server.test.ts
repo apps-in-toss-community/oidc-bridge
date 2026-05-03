@@ -1,9 +1,13 @@
 import { randomBytes } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { encryptColumn } from './apps/encryption.js';
 import { deriveSealingKey } from './master-keys/index.js';
-import { createMtlsMaterialAccessor, selectTossAdapter } from './server.js';
+import { createMtlsMaterialAccessor, runStartupTasks, selectTossAdapter } from './server.js';
 import type { Storage } from './storage/interface.js';
+import { createSqliteStorage } from './storage/sqlite.js';
 import type { AppRecord } from './storage/types.js';
 import { MockTossAdapter } from './toss/mock-adapter.js';
 import { RealTossAdapter } from './toss/real-adapter.js';
@@ -58,5 +62,44 @@ describe('createMtlsMaterialAccessor', () => {
     const out = await accessor(appId);
     expect(out).toEqual({ certPem, keyPem });
     expect(await accessor('missing')).toBeNull();
+  });
+});
+
+describe('runStartupTasks', () => {
+  let dir: string;
+  let storage: Storage;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'oidc-bridge-startup-'));
+    storage = createSqliteStorage({ path: join(dir, 'test.db') });
+    await storage.createUser({ id: 'user_a', email: 'a@x.com' });
+  });
+
+  afterEach(async () => {
+    await storage.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('purges expired user_sessions and returns the count', async () => {
+    const now = new Date('2026-05-03T00:00:00Z');
+    await storage.createUserSession({
+      id: 'sess_expired',
+      userId: 'user_a',
+      expiresAt: new Date('2026-05-02T00:00:00Z'),
+    });
+    await storage.createUserSession({
+      id: 'sess_live',
+      userId: 'user_a',
+      expiresAt: new Date('2026-05-04T00:00:00Z'),
+    });
+    const result = await runStartupTasks({ storage, now: () => now });
+    expect(result.purgedSessions).toBe(1);
+    expect(await storage.getUserSession('sess_expired')).toBeNull();
+    expect(await storage.getUserSession('sess_live')).not.toBeNull();
+  });
+
+  it('returns 0 when nothing to purge', async () => {
+    const result = await runStartupTasks({ storage, now: () => new Date() });
+    expect(result.purgedSessions).toBe(0);
   });
 });

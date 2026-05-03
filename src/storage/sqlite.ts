@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { asc, count, desc, eq } from 'drizzle-orm';
+import { asc, count, desc, eq, lte } from 'drizzle-orm';
 import { type BetterSQLite3Database, drizzle } from 'drizzle-orm/better-sqlite3';
 import type { Storage } from './interface.js';
 import { runSqliteMigrations } from './migrate.js';
@@ -231,6 +231,16 @@ export function createSqliteStorage(opts: SqliteStorageOptions): Storage {
     },
     async deleteUserSession(id) {
       await db.delete(s.userSessions).where(eq(s.userSessions.id, id));
+    },
+    async deleteUserSessionsByUser(userId) {
+      await db.delete(s.userSessions).where(eq(s.userSessions.userId, userId));
+    },
+    async purgeExpiredUserSessions(now) {
+      const result = await db
+        .delete(s.userSessions)
+        .where(lte(s.userSessions.expiresAt, now))
+        .returning({ id: s.userSessions.id });
+      return result.length;
     },
 
     async createMasterKey(input) {

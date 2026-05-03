@@ -135,6 +135,38 @@ export function runStorageConformance(name: string, factory: ConformanceFactory)
       expect(await storage.getUserSession('s_1')).toBeNull();
     });
 
+    it('user sessions: deleteUserSessionsByUser scopes by user_id', async () => {
+      await storage.createUser({ id: 'u_a', email: 'a@x.y' });
+      await storage.createUser({ id: 'u_b', email: 'b@x.y' });
+      const future = new Date(Date.now() + 60_000);
+      await storage.createUserSession({ id: 'sa1', userId: 'u_a', expiresAt: future });
+      await storage.createUserSession({ id: 'sa2', userId: 'u_a', expiresAt: future });
+      await storage.createUserSession({ id: 'sb1', userId: 'u_b', expiresAt: future });
+      await storage.deleteUserSessionsByUser('u_a');
+      expect(await storage.getUserSession('sa1')).toBeNull();
+      expect(await storage.getUserSession('sa2')).toBeNull();
+      expect(await storage.getUserSession('sb1')).not.toBeNull();
+    });
+
+    it('user sessions: purgeExpiredUserSessions deletes only expired and returns count', async () => {
+      await storage.createUser({ id: 'u_p', email: 'p@x.y' });
+      const past = new Date(Date.now() - 1_000);
+      const future = new Date(Date.now() + 60_000);
+      await storage.createUserSession({ id: 'p1', userId: 'u_p', expiresAt: past });
+      await storage.createUserSession({ id: 'p2', userId: 'u_p', expiresAt: past });
+      await storage.createUserSession({ id: 'f1', userId: 'u_p', expiresAt: future });
+      const purged = await storage.purgeExpiredUserSessions(new Date());
+      expect(purged).toBe(2);
+      expect(await storage.getUserSession('p1')).toBeNull();
+      expect(await storage.getUserSession('p2')).toBeNull();
+      expect(await storage.getUserSession('f1')).not.toBeNull();
+    });
+
+    it('users: password_hash round-trips (null default; can be set via direct write)', async () => {
+      const u = await storage.createUser({ id: 'u_pw', email: 'pw@x.y' });
+      expect(u.passwordHash).toBeNull();
+    });
+
     it('master keys: create, list ordering, retire is atomic + throws on missing', async () => {
       const m1 = await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
       expect(m1.retiredAt).toBeNull();

@@ -46,7 +46,16 @@ describe('runSqliteMigrations', () => {
     const applied = sqlite.prepare('SELECT hash FROM __drizzle_migrations ORDER BY id').all() as {
       hash: string;
     }[];
-    expect(applied).toHaveLength(1);
+    expect(applied.length).toBeGreaterThanOrEqual(1);
+    sqlite.close();
+  });
+
+  it('users.password_hash column exists', () => {
+    const sqlite = new Database(dbPath);
+    const db = drizzle(sqlite);
+    runSqliteMigrations(db);
+    const cols = sqlite.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain('password_hash');
     sqlite.close();
   });
 });

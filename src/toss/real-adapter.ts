@@ -25,6 +25,14 @@ interface TossSuccessTokenBody {
 
 const PATH_GENERATE_TOKEN = '/api-partner/v1/apps-in-toss/user/oauth2/generate-token';
 const PATH_REFRESH_TOKEN = '/api-partner/v1/apps-in-toss/user/oauth2/refresh-token';
+const PATH_LOGIN_ME = '/api-partner/v1/apps-in-toss/user/oauth2/login-me';
+
+interface TossLoginMeBody {
+  userKey: number;
+  scope: string;
+  agreedTerms: string[];
+  encryptedPii?: Record<string, string>;
+}
 
 export class RealTossAdapter implements TossAdapter {
   private readonly dispatchers = new Map<string, unknown>();
@@ -51,8 +59,20 @@ export class RealTossAdapter implements TossAdapter {
     return this.toTokenSet(body);
   }
 
-  async loginMe(_ctx: TossAdapterContext, _input: { accessToken: string }): Promise<LoginMeOutput> {
-    throw new TossUpstreamError('upstream_error', 'loginMe: not implemented yet');
+  async loginMe(ctx: TossAdapterContext, input: { accessToken: string }): Promise<LoginMeOutput> {
+    const dispatcher = await this.dispatcherFor(ctx.appId);
+    const body = await this.callJson<TossLoginMeBody>(
+      PATH_LOGIN_ME,
+      dispatcher,
+      {},
+      { authorization: `Bearer ${input.accessToken}` },
+    );
+    return {
+      userKey: body.userKey,
+      scope: body.scope.split(' ').filter(Boolean),
+      agreedTerms: body.agreedTerms,
+      ...(body.encryptedPii !== undefined ? { encryptedPii: body.encryptedPii } : {}),
+    };
   }
 
   async accessRemove(_ctx: TossAdapterContext, _input: { userKey: string }): Promise<void> {
@@ -72,12 +92,17 @@ export class RealTossAdapter implements TossAdapter {
     return fresh;
   }
 
-  private async callJson<T>(path: string, dispatcher: unknown, payload: unknown): Promise<T> {
+  private async callJson<T>(
+    path: string,
+    dispatcher: unknown,
+    payload: unknown,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<T> {
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.deps.apiBase}${path}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...extraHeaders },
         body: JSON.stringify(payload),
         ...((dispatcher !== undefined ? { dispatcher } : {}) as Record<string, unknown>),
       } as RequestInit);

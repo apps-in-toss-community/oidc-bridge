@@ -121,4 +121,51 @@ describe('RealTossAdapter', () => {
       scope: ['openid', 'profile'],
     });
   });
+
+  it('loginMe sends bearer header and returns parsed userKey', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toContain('/oauth2/login-me');
+      const headers = init?.headers as Record<string, string>;
+      expect(headers.authorization).toBe('Bearer toss_at_x');
+      return new Response(
+        JSON.stringify({
+          resultType: 'SUCCESS',
+          success: { userKey: 42, scope: 'openid profile', agreedTerms: ['service'] },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    const adapter = new RealTossAdapter({
+      apiBase: 'https://x.example',
+      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
+      fetchImpl,
+      buildDispatcher: () => ({}),
+    });
+    const me = await adapter.loginMe({ appId: 'a' }, { accessToken: 'toss_at_x' });
+    expect(me.userKey).toBe(42);
+    expect(me.scope).toEqual(['openid', 'profile']);
+    expect(me.agreedTerms).toEqual(['service']);
+  });
+
+  it('loginMe maps FAIL to upstream_error', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            resultType: 'FAIL',
+            error: { code: 'INVALID_TOKEN', message: 'gone' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    const adapter = new RealTossAdapter({
+      apiBase: 'https://x.example',
+      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
+      fetchImpl,
+      buildDispatcher: () => ({}),
+    });
+    await expect(adapter.loginMe({ appId: 'a' }, { accessToken: 'gone' })).rejects.toMatchObject({
+      code: 'upstream_error',
+    });
+  });
 });

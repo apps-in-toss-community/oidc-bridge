@@ -26,6 +26,7 @@ interface TossSuccessTokenBody {
 const PATH_GENERATE_TOKEN = '/api-partner/v1/apps-in-toss/user/oauth2/generate-token';
 const PATH_REFRESH_TOKEN = '/api-partner/v1/apps-in-toss/user/oauth2/refresh-token';
 const PATH_LOGIN_ME = '/api-partner/v1/apps-in-toss/user/oauth2/login-me';
+const PATH_ACCESS_REMOVE = '/api-partner/v1/apps-in-toss/user/oauth2/access-remove';
 
 interface TossLoginMeBody {
   userKey: number;
@@ -75,8 +76,9 @@ export class RealTossAdapter implements TossAdapter {
     };
   }
 
-  async accessRemove(_ctx: TossAdapterContext, _input: { userKey: string }): Promise<void> {
-    throw new TossUpstreamError('upstream_error', 'accessRemove: not implemented yet');
+  async accessRemove(ctx: TossAdapterContext, input: { userKey: string }): Promise<void> {
+    const dispatcher = await this.dispatcherFor(ctx.appId);
+    await this.callJson<unknown>(PATH_ACCESS_REMOVE, dispatcher, { userKey: input.userKey });
   }
 
   private async dispatcherFor(appId: string): Promise<unknown> {

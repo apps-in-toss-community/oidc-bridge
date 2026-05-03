@@ -168,4 +168,44 @@ describe('RealTossAdapter', () => {
       code: 'upstream_error',
     });
   });
+
+  it('accessRemove sends userKey and resolves on SUCCESS', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toContain('/oauth2/access-remove');
+      expect(JSON.parse(init?.body as string)).toEqual({ userKey: '42' });
+      return new Response(JSON.stringify({ resultType: 'SUCCESS', success: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const adapter = new RealTossAdapter({
+      apiBase: 'https://x.example',
+      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
+      fetchImpl,
+      buildDispatcher: () => ({}),
+    });
+    await expect(adapter.accessRemove({ appId: 'a' }, { userKey: '42' })).resolves.toBeUndefined();
+  });
+
+  it('accessRemove maps FAIL to upstream_error', async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            resultType: 'FAIL',
+            error: { code: 'NOT_FOUND', message: 'gone' },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    const adapter = new RealTossAdapter({
+      apiBase: 'https://x.example',
+      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
+      fetchImpl,
+      buildDispatcher: () => ({}),
+    });
+    await expect(adapter.accessRemove({ appId: 'a' }, { userKey: '42' })).rejects.toMatchObject({
+      code: 'upstream_error',
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadOidcConfig } from './config.js';
+import { loadOidcConfig, loadTossConfig } from './config.js';
 
 describe('loadOidcConfig', () => {
   const orig = { ...process.env };
@@ -38,5 +38,29 @@ describe('loadOidcConfig', () => {
     process.env.OIDC_ACTIVE_KID = 'k1';
     process.env.OIDC_SIGNING_KEY_K1_PEM = 'pem';
     expect(() => loadOidcConfig(process.env)).toThrow(/trailing slash/);
+  });
+});
+
+describe('loadTossConfig', () => {
+  const orig = { ...process.env };
+  beforeEach(() => {
+    delete process.env.TOSS_API_BASE;
+  });
+  afterEach(() => {
+    process.env = { ...orig };
+  });
+
+  it('defaults to production partner host', () => {
+    expect(loadTossConfig(process.env).apiBase).toBe('https://apps-in-toss-api.toss.im');
+  });
+
+  it('respects TOSS_API_BASE override', () => {
+    process.env.TOSS_API_BASE = 'https://sandbox.toss.example';
+    expect(loadTossConfig(process.env).apiBase).toBe('https://sandbox.toss.example');
+  });
+
+  it('rejects trailing slash (would corrupt URL join)', () => {
+    process.env.TOSS_API_BASE = 'https://x.example/';
+    expect(() => loadTossConfig(process.env)).toThrow(/trailing slash/);
   });
 });

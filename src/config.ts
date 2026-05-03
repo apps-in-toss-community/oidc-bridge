@@ -49,3 +49,15 @@ function req(env: NodeJS.ProcessEnv, k: string): string {
   if (!v) throw new Error(`${k} required`);
   return v;
 }
+
+export interface TossConfig {
+  apiBase: string;
+}
+
+export function loadTossConfig(env: NodeJS.ProcessEnv = process.env): TossConfig {
+  const raw = (env.TOSS_API_BASE ?? 'https://apps-in-toss-api.toss.im').trim();
+  if (raw.endsWith('/')) {
+    throw new Error(`TOSS_API_BASE must not have a trailing slash; got "${raw}"`);
+  }
+  return { apiBase: raw };
+}

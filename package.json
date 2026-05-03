@@ -18,6 +18,8 @@
     "dev": "tsdown src/server.ts --format esm --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "spike:toss": "tsx scripts/live-toss-spike.ts",
+    "test:e2e:live": "TOSS_LIVE_TEST=1 vitest run --project live",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
@@ -37,6 +39,7 @@
     "nanoid": "^5.1.11",
     "pg": "^8.20.0",
     "pino": "^9.14.0",
+    "undici": "^8.2.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -48,6 +51,7 @@
     "drizzle-kit": "^0.30.6",
     "pino-pretty": "^11.3.0",
     "tsdown": "^0.21.7",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },

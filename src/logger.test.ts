@@ -105,6 +105,28 @@ describe('createLogger', () => {
     expect(line).toContain('[Redacted]');
   });
 
+  it('redacts in-memory mTLS PEMs and toss tokens', () => {
+    const { stream, lines } = captureLogs();
+    const log = createLogger({ destination: stream, mode: 'json' });
+
+    log.info(
+      {
+        mtls_cert_pem: '-----BEGIN CERTIFICATE-----\nXXX\n-----END CERTIFICATE-----\n',
+        mtls_key_pem: '-----BEGIN PRIVATE KEY-----\nYYY\n-----END PRIVATE KEY-----\n',
+        toss_access_token: 'AT_PLAINTEXT',
+        toss_refresh_token: 'RT_PLAINTEXT',
+      },
+      'leak-check',
+    );
+
+    const line = lines.join('');
+    expect(line).not.toContain('XXX');
+    expect(line).not.toContain('YYY');
+    expect(line).not.toContain('AT_PLAINTEXT');
+    expect(line).not.toContain('RT_PLAINTEXT');
+    expect(line).toContain('[Redacted]');
+  });
+
   it('emits valid JSON in json mode', () => {
     const { stream, lines } = captureLogs();
     const log = createLogger({ destination: stream, mode: 'json' });

@@ -2,16 +2,19 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
-import { loadOidcConfig } from './config.js';
+import { decryptColumn } from './apps/encryption.js';
+import { loadOidcConfig, loadTossConfig } from './config.js';
 import { createLogger } from './logger.js';
-import { createMasterKeyProvider } from './master-keys/index.js';
+import { createMasterKeyProvider, deriveSealingKey } from './master-keys/index.js';
 import { createAppSealingKeyResolver } from './oidc/app-sealing-key.js';
 import { createInMemoryRevocationStore } from './oidc/revocation-store.js';
 import { createSigningKeyRegistry } from './oidc/signing-keys.js';
 import type { Storage } from './storage/interface.js';
 import { createPgStorage } from './storage/pg.js';
 import { createSqliteStorage } from './storage/sqlite.js';
+import type { TossAdapter } from './toss/adapter.js';
 import { MockTossAdapter } from './toss/mock-adapter.js';
+import { RealTossAdapter, type RealTossAdapterDeps } from './toss/real-adapter.js';
 
 async function openStorage(): Promise<Storage> {
   const kind = (process.env.STORAGE ?? 'sqlite').toLowerCase();
@@ -29,6 +32,42 @@ async function openStorage(): Promise<Storage> {
   throw new Error(`unknown STORAGE=${kind}`);
 }
 
+export function selectTossAdapter(
+  env: NodeJS.ProcessEnv,
+  deps: Omit<RealTossAdapterDeps, 'fetchImpl' | 'buildDispatcher'>,
+): TossAdapter {
+  if (env.BRIDGE_TOSS_ADAPTER === 'mock') return new MockTossAdapter();
+  return new RealTossAdapter(deps);
+}
+
+interface MtlsAccessorDeps {
+  storage: Storage;
+  getMasterKey: (version: number) => Promise<Buffer>;
+}
+
+export function createMtlsMaterialAccessor(
+  deps: MtlsAccessorDeps,
+): (appId: string) => Promise<{ certPem: string; keyPem: string } | null> {
+  return async (appId) => {
+    const app = await deps.storage.getApp(appId);
+    if (!app) return null;
+    const masterKey = await deps.getMasterKey(app.sealingKeyVersion);
+    const sealingKey = deriveSealingKey({ masterKey, appId });
+    const aad = Buffer.from(appId, 'utf8');
+    const certPem = decryptColumn({
+      key: sealingKey,
+      ciphertext: Buffer.from(app.mtlsCertEnc),
+      aad,
+    }).toString('utf8');
+    const keyPem = decryptColumn({
+      key: sealingKey,
+      ciphertext: Buffer.from(app.mtlsKeyEnc),
+      aad,
+    }).toString('utf8');
+    return { certPem, keyPem };
+  };
+}
+
 async function main() {
   const log = createLogger();
   const port = Number(process.env.PORT ?? 8080);
@@ -36,6 +75,7 @@ async function main() {
   const storage = await openStorage();
   const masterKeyProvider = createMasterKeyProvider();
   const oidcConfig = loadOidcConfig(process.env);
+  const tossConfig = loadTossConfig(process.env);
   const signingKeyRegistry = await createSigningKeyRegistry({
     activeKid: oidcConfig.activeKid,
     signingKeys: oidcConfig.signingKeys,
@@ -44,12 +84,20 @@ async function main() {
 
   const revocationStore = createInMemoryRevocationStore();
 
+  const tossAdapter = selectTossAdapter(process.env, {
+    apiBase: tossConfig.apiBase,
+    getMtlsMaterial: createMtlsMaterialAccessor({
+      storage,
+      getMasterKey: (version) => masterKeyProvider.getKeyBytes(version),
+    }),
+  });
+
   const app = createApp({
     oidc: {
       config: oidcConfig,
       signingKeyRegistry,
       storage,
-      tossAdapter: new MockTossAdapter(),
+      tossAdapter,
       resolveAppSealingKey,
       revocationStore,
     },
@@ -67,7 +115,18 @@ async function main() {
   process.on('SIGINT', shutdown);
 }
 
-main().catch((err) => {
-  createLogger().fatal({ err }, 'oidc-bridge bootstrap failed');
-  process.exit(1);
-});
+// Only run main() when this file is the process entry point (i.e., production
+// `node dist/server.mjs`). Importing server.ts in tests must not boot the HTTP
+// listener.
+const invokedAsEntrypoint = (() => {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  return import.meta.url === `file://${argv1}` || import.meta.url.endsWith(argv1);
+})();
+
+if (invokedAsEntrypoint) {
+  main().catch((err) => {
+    createLogger().fatal({ err }, 'oidc-bridge bootstrap failed');
+    process.exit(1);
+  });
+}

@@ -103,3 +103,58 @@ Always returns 200. The local revocation list is per-instance in-memory;
 restarting the bridge clears it. For a permanent kill switch in self-host,
 rotate the master key (the old wrapper version becomes unrecoverable once you
 remove the old key bytes).
+
+## Capturing fresh Toss fixtures (`pnpm spike:toss`)
+
+The unit tests under `src/toss/real-adapter.test.ts` use synthetic envelopes.
+The `src/toss/fixtures/*.real.json` files are real captured envelopes (with
+tokens / userKey / PII redacted). Refresh them whenever Toss changes the
+envelope.
+
+Prerequisites:
+
+- A Toss sandbox cert + key (`*.cert.pem`, `*.key.pem`) registered to a
+  test app.
+- A fresh `authorizationCode` from the mini-app's `appLogin()` (10-minute
+  TTL).
+
+Run:
+
+```bash
+TOSS_LIVE_CERT_PATH=./local/sandbox.cert.pem \
+TOSS_LIVE_KEY_PATH=./local/sandbox.key.pem \
+TOSS_API_BASE=https://apps-in-toss-api.toss.im \
+TOSS_LIVE_AUTH_CODE=<authorizationCode> \
+pnpm spike:toss
+```
+
+Five `.real.json` files appear under `src/toss/fixtures/`. **Inspect them
+before committing** — confirm no real token, no real userKey, no PII.
+
+## Smoke-testing against sandbox (`pnpm test:e2e:live`)
+
+A single gated test exercises the full happy path against Toss sandbox.
+CI never runs it.
+
+```bash
+TOSS_LIVE_TEST=1 \
+TOSS_LIVE_CERT_PATH=./local/sandbox.cert.pem \
+TOSS_LIVE_KEY_PATH=./local/sandbox.key.pem \
+TOSS_LIVE_AUTH_CODE=<authorizationCode> \
+pnpm test:e2e:live
+```
+
+If this passes, the real adapter is wired correctly end-to-end. If it fails
+with `upstream_error`, check `apiBase`, cert validity, and that the
+authorization code is fresh (10-minute window).
+
+## When Toss changes the envelope shape
+
+1. `pnpm spike:toss` to capture fresh fixtures.
+2. Eyeball the diff in `src/toss/fixtures/*.real.json`.
+3. If keys were added, parsing still works (we only consume known fields).
+4. If keys were renamed or removed, update `src/toss/real-adapter.ts`
+   `toTokenSet` / `loginMe` / `accessRemove` and add a unit test pinning
+   the new shape.
+5. Open a PR with the fixture refresh + the parser change, never
+   separately.

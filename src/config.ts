@@ -61,3 +61,13 @@ export function loadTossConfig(env: NodeJS.ProcessEnv = process.env): TossConfig
   }
   return { apiBase: raw };
 }
+
+export interface BridgeFlags {
+  enableSessionLogin: boolean;
+}
+
+export function loadBridgeFlags(env: NodeJS.ProcessEnv = process.env): BridgeFlags {
+  return {
+    enableSessionLogin: env.BRIDGE_ENABLE_SESSION_LOGIN === '1',
+  };
+}

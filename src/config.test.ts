@@ -64,3 +64,22 @@ describe('loadTossConfig', () => {
     expect(() => loadTossConfig(process.env)).toThrow(/trailing slash/);
   });
 });
+
+describe('loadBridgeFlags', () => {
+  it('enableSessionLogin is false when env var unset', async () => {
+    const { loadBridgeFlags } = await import('./config.js');
+    expect(loadBridgeFlags({}).enableSessionLogin).toBe(false);
+  });
+
+  it('enableSessionLogin is false for any value other than "1"', async () => {
+    const { loadBridgeFlags } = await import('./config.js');
+    expect(loadBridgeFlags({ BRIDGE_ENABLE_SESSION_LOGIN: '0' }).enableSessionLogin).toBe(false);
+    expect(loadBridgeFlags({ BRIDGE_ENABLE_SESSION_LOGIN: 'true' }).enableSessionLogin).toBe(false);
+    expect(loadBridgeFlags({ BRIDGE_ENABLE_SESSION_LOGIN: '' }).enableSessionLogin).toBe(false);
+  });
+
+  it('enableSessionLogin is true only when env var is exactly "1"', async () => {
+    const { loadBridgeFlags } = await import('./config.js');
+    expect(loadBridgeFlags({ BRIDGE_ENABLE_SESSION_LOGIN: '1' }).enableSessionLogin).toBe(true);
+  });
+});

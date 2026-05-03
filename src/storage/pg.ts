@@ -73,6 +73,14 @@ export async function createPgStorage(opts: PgStorageOptions): Promise<Storage> 
       const [row] = await db.select().from(s.users).where(eq(s.users.email, email));
       return row ?? null;
     },
+    async setUserPassword(userId, passwordHash) {
+      const result = await db
+        .update(s.users)
+        .set({ passwordHash })
+        .where(eq(s.users.id, userId))
+        .returning({ id: s.users.id });
+      if (result.length === 0) throw new Error(`setUserPassword: unknown user "${userId}"`);
+    },
 
     async createApiToken(input) {
       const [row] = await db

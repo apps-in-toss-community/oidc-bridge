@@ -167,6 +167,14 @@ export function runStorageConformance(name: string, factory: ConformanceFactory)
       expect(u.passwordHash).toBeNull();
     });
 
+    it('users: setUserPassword writes hash; throws on unknown user', async () => {
+      await storage.createUser({ id: 'u_setpw', email: 'setpw@x.y' });
+      await storage.setUserPassword('u_setpw', '$2a$12$abcdefghijklmnopqrstuv');
+      const u = await storage.getUserById('u_setpw');
+      expect(u?.passwordHash).toBe('$2a$12$abcdefghijklmnopqrstuv');
+      await expect(storage.setUserPassword('u_missing', 'h')).rejects.toThrow(/u_missing/);
+    });
+
     it('master keys: create, list ordering, retire is atomic + throws on missing', async () => {
       const m1 = await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
       expect(m1.retiredAt).toBeNull();

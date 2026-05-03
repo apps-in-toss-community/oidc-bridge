@@ -14,6 +14,7 @@ export interface Storage {
   createUser(input: { id: string; email: string }): Promise<User>;
   getUserById(id: string): Promise<User | null>;
   getUserByEmail(email: string): Promise<User | null>;
+  setUserPassword(userId: string, passwordHash: string): Promise<void>;
 
   // API tokens
   createApiToken(input: {

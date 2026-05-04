@@ -201,8 +201,8 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 | 4 | userinfo / revoke / confidential | `GET /oidc/userinfo`, `POST /oidc/revoke`, `GET /oidc/raw-tokens`, confidential-client 인증. | ✅ main |
 | 5 | Real Toss mTLS | mTLS adapter, sandbox-fixture capture, error mapping, `test:e2e:live`. | ✅ main |
 | 6 | Admin sessions | `user_sessions` + stub session-login (feature flag), CLI `user create` / `user set-password`. | ✅ main |
-| **7** | **CLI bootstrap/doctor** | **`bootstrap` (offline), `doctor` 진단.** | **진행 예정** |
-| 8 | Status / rate-limit / observability | `/status` HTML, sliding-window rate limits, pino structured logs, request-id, optional OTel. | |
+| 7 | CLI bootstrap/doctor | `bootstrap` (offline), `doctor` 진단 (env/db/master-key/JWKS/optional Toss probe). TTY-aware reporter + `--json`. | ✅ main |
+| **8** | **Status / rate-limit / observability** | **`/status` HTML, sliding-window rate limits, pino structured logs, request-id, optional OTel.** | **진행 예정** |
 | 9 | Self-host artifacts | Dockerfile + docker-compose + SECURITY.md + SELF_HOSTING.md, clean-VPS smoke. | |
 | 10 | GCP Cloud Run | Cloud Run + Cloud SQL pg + GCPSM master keys + Cloud Build, DNS to `oidc-bridge.aitc.dev`. | |
 | **11** | **sdk-example dog-fooding (M5 launch gate)** | sdk-example legacy `/verify` 경로를 `appLogin → /oidc/token → signInWithIdToken`으로 교체. | |
@@ -211,9 +211,9 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 
 ## Status
 
-현재 main: zero-code mode Phase 0–6 머지됨 (#19, #20, #21, #22, #24, #25, #26, #27, #29, #32). 다음은 Phase 7 (CLI `bootstrap`/`doctor`). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
+현재 main: zero-code mode Phase 0–7 머지됨 (#19, #20, #21, #22, #24, #25, #26, #27, #29, #32, #34). 다음은 Phase 8 (`/status` + rate-limit + observability). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
 
-## Standing decisions (Phase 1, 3, 4, 5, 6에서 굳어진 것)
+## Standing decisions (Phase 1, 3, 4, 5, 6, 7에서 굳어진 것)
 
 다음 phase에서도 그대로 따른다. 회고 상세:
 - Phase 0+1: [`docs/superpowers/retros/2026-05-02-phase-01-retro.md`](docs/superpowers/retros/2026-05-02-phase-01-retro.md)
@@ -221,6 +221,7 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 - Phase 4: [`docs/superpowers/retros/2026-05-02-phase-04-retro.md`](docs/superpowers/retros/2026-05-02-phase-04-retro.md)
 - Phase 5: [`docs/superpowers/retros/2026-05-03-phase-05-retro.md`](docs/superpowers/retros/2026-05-03-phase-05-retro.md)
 - Phase 6: [`docs/superpowers/retros/2026-05-03-phase-06-retro.md`](docs/superpowers/retros/2026-05-03-phase-06-retro.md)
+- Phase 7: [`docs/superpowers/retros/2026-05-05-phase-07-retro.md`](docs/superpowers/retros/2026-05-05-phase-07-retro.md)
 
 ### pnpm 10 + native modules
 

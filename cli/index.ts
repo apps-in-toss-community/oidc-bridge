@@ -2,6 +2,8 @@
 import { Command } from 'commander';
 import { apiTokenCommand } from './commands/api-token.js';
 import { appCommand } from './commands/app.js';
+import { bootstrapCommand } from './commands/bootstrap.js';
+import { doctorCommand } from './commands/doctor.js';
 import { userCommand } from './commands/user.js';
 import { workspaceCommand } from './commands/workspace.js';
 
@@ -14,6 +16,8 @@ program.addCommand(workspaceCommand());
 program.addCommand(appCommand());
 program.addCommand(apiTokenCommand());
 program.addCommand(userCommand());
+program.addCommand(bootstrapCommand());
+program.addCommand(doctorCommand());
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : err);

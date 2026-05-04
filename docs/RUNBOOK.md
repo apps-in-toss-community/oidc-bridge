@@ -4,6 +4,13 @@ Operational procedures for the community-operated public instance and
 self-host deployments. Each section is self-contained — read top-to-bottom for
 the procedure you're running.
 
+## First-time setup
+
+For a brand-new self-host install, see [`SELF_HOSTING.md`](./SELF_HOSTING.md)
+— it walks through `oidc-bridge bootstrap` and `oidc-bridge doctor` and
+the env-var block they produce. The procedures below assume that
+walkthrough has already been run.
+
 ## Rotating OIDC signing keys
 
 The bridge supports overlapping signing keys. Add the new key first, switch the

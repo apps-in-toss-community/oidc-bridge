@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { encryptColumn } from './apps/encryption.js';
 import { deriveSealingKey } from './master-keys/index.js';
-import { createMtlsMaterialAccessor, runStartupTasks, selectTossAdapter } from './server.js';
+import type { MasterKeyProvider } from './master-keys/provider.js';
+import {
+  buildAdminBlock,
+  createMtlsMaterialAccessor,
+  runStartupTasks,
+  selectTossAdapter,
+} from './server.js';
 import { createSessionService } from './sessions/service.js';
 import { createSessionStore } from './sessions/store.js';
 import type { Storage } from './storage/interface.js';
@@ -104,6 +110,134 @@ describe('runStartupTasks', () => {
   it('returns 0 when nothing to purge', async () => {
     const result = await runStartupTasks({ storage, now: () => new Date() });
     expect(result.purgedSessions).toBe(0);
+  });
+});
+
+describe('buildAdminBlock', () => {
+  let storage: Storage;
+  const fakeProvider: MasterKeyProvider = {
+    getKeyBytes: async () => Buffer.alloc(32),
+    listVersions: async () => [1],
+  };
+
+  beforeEach(async () => {
+    storage = createSqliteStorage({ path: ':memory:' });
+  });
+  afterEach(async () => {
+    await storage.close();
+  });
+
+  it('returns a block when at least one non-retired master key exists', async () => {
+    await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
+    const block = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: {},
+    });
+    expect(block).not.toBeNull();
+    if (!block) throw new Error('unreachable');
+    expect(block.activeMasterKeyVersion()).toBe(1);
+    expect(block.stage()).toBeUndefined();
+    expect(block.masterKeyProvider).toBe(fakeProvider);
+    expect(typeof block.service.workspaces.create).toBe('function');
+  });
+
+  it('picks the highest non-retired version when multiple exist', async () => {
+    await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
+    await storage.createMasterKey({ id: 'mk_2', version: 2, providerRef: 'env:2' });
+    await storage.createMasterKey({ id: 'mk_3', version: 3, providerRef: 'env:3' });
+    await storage.retireMasterKey(3, new Date());
+    const block = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: {},
+    });
+    if (!block) throw new Error('expected block');
+    expect(block.activeMasterKeyVersion()).toBe(2);
+  });
+
+  it('returns null when no master keys are present (pre-bootstrap)', async () => {
+    const block = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: {},
+    });
+    expect(block).toBeNull();
+  });
+
+  it('returns null when every master key is retired', async () => {
+    await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
+    await storage.retireMasterKey(1, new Date());
+    const block = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: {},
+    });
+    expect(block).toBeNull();
+  });
+
+  it('reads BRIDGE_STAGE for the stage callback', async () => {
+    await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
+    const block = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: { BRIDGE_STAGE: 'beta' },
+    });
+    if (!block) throw new Error('expected block');
+    expect(block.stage()).toBe('beta');
+  });
+
+  it('ignores invalid BRIDGE_STAGE values (treated as undefined)', async () => {
+    await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
+    const block = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: { BRIDGE_STAGE: 'production' },
+    });
+    if (!block) throw new Error('expected block');
+    expect(block.stage()).toBeUndefined();
+  });
+});
+
+describe('admin routes mounted via buildAdminBlock + createApp', () => {
+  let storage: Storage;
+  const fakeProvider: MasterKeyProvider = {
+    getKeyBytes: async () => Buffer.alloc(32),
+    listVersions: async () => [1],
+  };
+
+  beforeEach(async () => {
+    storage = createSqliteStorage({ path: ':memory:' });
+    await storage.createMasterKey({ id: 'mk_1', version: 1, providerRef: 'env:1' });
+  });
+  afterEach(async () => {
+    await storage.close();
+  });
+
+  it('GET /admin/workspaces without token returns 401 (route mounted, auth wired)', async () => {
+    const admin = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: {},
+    });
+    if (!admin) throw new Error('expected admin block');
+    const app = createApp({ admin });
+    const r = await app.request('/admin/workspaces');
+    expect(r.status).toBe(401);
+  });
+
+  it('GET /admin/workspaces with bogus token returns 401 (not 404)', async () => {
+    const admin = await buildAdminBlock({
+      storage,
+      masterKeyProvider: fakeProvider,
+      env: {},
+    });
+    if (!admin) throw new Error('expected admin block');
+    const app = createApp({ admin });
+    const r = await app.request('/admin/workspaces', {
+      headers: { authorization: 'Bearer not-a-real-token' },
+    });
+    expect(r.status).toBe(401);
   });
 });
 

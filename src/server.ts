@@ -3,9 +3,13 @@ import { dirname } from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { decryptColumn } from './apps/encryption.js';
+import type { Stage } from './apps/ownership.js';
+import type { MountAdminRoutesOptions } from './apps/routes.js';
+import { createService } from './apps/service.js';
 import { loadBridgeFlags, loadOidcConfig, loadTossConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { createMasterKeyProvider, deriveSealingKey } from './master-keys/index.js';
+import type { MasterKeyProvider } from './master-keys/provider.js';
 import { createAppSealingKeyResolver } from './oidc/app-sealing-key.js';
 import { createInMemoryRevocationStore } from './oidc/revocation-store.js';
 import { createSigningKeyRegistry } from './oidc/signing-keys.js';
@@ -85,6 +89,31 @@ export async function runStartupTasks(deps: RunStartupTasksDeps): Promise<Startu
   return { purgedSessions };
 }
 
+const STAGE_VALUES: ReadonlySet<string> = new Set(['alpha', 'beta', 'ga']);
+
+export interface BuildAdminBlockDeps {
+  storage: Storage;
+  masterKeyProvider: MasterKeyProvider;
+  env: NodeJS.ProcessEnv;
+}
+
+export async function buildAdminBlock(
+  deps: BuildAdminBlockDeps,
+): Promise<MountAdminRoutesOptions | null> {
+  const all = await deps.storage.listMasterKeys();
+  const active = all.filter((m) => m.retiredAt === null).map((m) => m.version);
+  if (active.length === 0) return null;
+  const version = Math.max(...active);
+  const stageEnv = deps.env.BRIDGE_STAGE;
+  const stage: Stage = stageEnv && STAGE_VALUES.has(stageEnv) ? (stageEnv as Stage) : undefined;
+  return {
+    service: createService({ storage: deps.storage }),
+    masterKeyProvider: deps.masterKeyProvider,
+    activeMasterKeyVersion: () => version,
+    stage: () => stage,
+  };
+}
+
 async function main() {
   const log = createLogger();
   const port = Number(process.env.PORT ?? 8080);
@@ -128,6 +157,16 @@ async function main() {
     }),
   });
 
+  const admin = await buildAdminBlock({ storage, masterKeyProvider, env: process.env });
+  if (admin) {
+    log.info(
+      { activeMasterKeyVersion: admin.activeMasterKeyVersion(), stage: admin.stage() ?? null },
+      'admin REST mounted',
+    );
+  } else {
+    log.warn('admin REST not mounted: no active master key (run `oidc-bridge bootstrap` first)');
+  }
+
   const appOpts = {
     oidc: {
       config: oidcConfig,
@@ -137,6 +176,7 @@ async function main() {
       resolveAppSealingKey,
       revocationStore,
     },
+    ...(admin ? { admin } : {}),
     ...(session ? { session } : {}),
   };
   const app = createApp(appOpts);

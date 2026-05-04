@@ -118,7 +118,7 @@ export function formatBootstrapSummary(
     `  OIDC_ISSUER=${env.issuerHint}`,
     '  OIDC_ACTIVE_KID=k1',
     '  OIDC_SIGNING_KEY_K1_PEM="$(cat your-signing-key.pem)"',
-    `  API_TOKEN=${s.apiTokenPlaintext}`,
+    '  API_TOKEN=<paste ADMIN_API_TOKEN above>',
     '',
     'Next: run `oidc-bridge doctor` to verify the install.',
     '',

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createSqliteStorage } from '../../src/storage/sqlite.js';
-import { runBootstrap } from './bootstrap.js';
+import { formatBootstrapSummary, runBootstrap } from './bootstrap.js';
 
 describe('runBootstrap', () => {
   let tmp: string;
@@ -105,5 +105,33 @@ describe('runBootstrap', () => {
     const masterKeyDir = join(tmp, 'nested', 'deeper', 'keys');
     await runBootstrap({ dbPath, masterKeyDir, email: 'a@b', workspaceName: 'w' });
     expect(existsSync(join(masterKeyDir, 'v1.key'))).toBe(true);
+  });
+});
+
+describe('formatBootstrapSummary', () => {
+  const summary = {
+    userId: 'user_test123',
+    workspaceId: 'ws_test456',
+    apiTokenId: 'tok_testid',
+    apiTokenPlaintext: 'tok_supersecretplaintext',
+    masterKeyVersion: 1,
+    masterKeyPath: '/data/keys/v1.key',
+  };
+  const env = { issuerHint: 'https://oidc-bridge.example', dbPath: '/data/bridge.db' };
+
+  it('prints apiTokenPlaintext exactly once', () => {
+    const out = formatBootstrapSummary(summary, env);
+    // split-by produces N+1 parts; N=1 means exactly one occurrence
+    expect(out.split(summary.apiTokenPlaintext).length).toBe(2);
+  });
+
+  it('contains ADMIN_API_TOKEN with the plaintext value', () => {
+    const out = formatBootstrapSummary(summary, env);
+    expect(out).toContain(`ADMIN_API_TOKEN=${summary.apiTokenPlaintext}`);
+  });
+
+  it('contains API_TOKEN placeholder (not the plaintext)', () => {
+    const out = formatBootstrapSummary(summary, env);
+    expect(out).toContain('API_TOKEN=<paste ADMIN_API_TOKEN above>');
   });
 });

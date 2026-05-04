@@ -3,12 +3,14 @@ import { dirname } from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { decryptColumn } from './apps/encryption.js';
-import { loadOidcConfig, loadTossConfig } from './config.js';
+import { loadBridgeFlags, loadOidcConfig, loadTossConfig } from './config.js';
 import { createLogger } from './logger.js';
 import { createMasterKeyProvider, deriveSealingKey } from './master-keys/index.js';
 import { createAppSealingKeyResolver } from './oidc/app-sealing-key.js';
 import { createInMemoryRevocationStore } from './oidc/revocation-store.js';
 import { createSigningKeyRegistry } from './oidc/signing-keys.js';
+import { createSessionService } from './sessions/service.js';
+import { createSessionStore } from './sessions/store.js';
 import type { Storage } from './storage/interface.js';
 import { createPgStorage } from './storage/pg.js';
 import { createSqliteStorage } from './storage/sqlite.js';
@@ -90,6 +92,23 @@ async function main() {
   const storage = await openStorage();
   const startupResult = await runStartupTasks({ storage });
   log.info({ purgedSessions: startupResult.purgedSessions }, 'startup tasks complete');
+
+  const flags = loadBridgeFlags(process.env);
+  log.info({ enableSessionLogin: flags.enableSessionLogin }, 'session-login flag');
+  const session = flags.enableSessionLogin
+    ? {
+        service: createSessionService({
+          store: createSessionStore(storage),
+          ttlMs: 1000 * 60 * 60 * 24, // 24h
+          lookupUser: async (email) => {
+            const u = await storage.getUserByEmail(email);
+            if (!u) return null;
+            return { id: u.id, passwordHash: u.passwordHash };
+          },
+        }),
+      }
+    : undefined;
+
   const masterKeyProvider = createMasterKeyProvider();
   const oidcConfig = loadOidcConfig(process.env);
   const tossConfig = loadTossConfig(process.env);
@@ -109,7 +128,7 @@ async function main() {
     }),
   });
 
-  const app = createApp({
+  const appOpts = {
     oidc: {
       config: oidcConfig,
       signingKeyRegistry,
@@ -118,7 +137,9 @@ async function main() {
       resolveAppSealingKey,
       revocationStore,
     },
-  });
+    ...(session ? { session } : {}),
+  };
+  const app = createApp(appOpts);
 
   serve({ fetch: app.fetch, port }, (info) => {
     log.info({ port: info.port, addr: info.address }, 'oidc-bridge listening');

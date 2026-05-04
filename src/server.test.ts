@@ -3,9 +3,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createApp } from './app.js';
 import { encryptColumn } from './apps/encryption.js';
 import { deriveSealingKey } from './master-keys/index.js';
 import { createMtlsMaterialAccessor, runStartupTasks, selectTossAdapter } from './server.js';
+import { createSessionService } from './sessions/service.js';
+import { createSessionStore } from './sessions/store.js';
 import type { Storage } from './storage/interface.js';
 import { createSqliteStorage } from './storage/sqlite.js';
 import type { AppRecord } from './storage/types.js';
@@ -101,5 +104,52 @@ describe('runStartupTasks', () => {
   it('returns 0 when nothing to purge', async () => {
     const result = await runStartupTasks({ storage, now: () => new Date() });
     expect(result.purgedSessions).toBe(0);
+  });
+});
+
+describe('server session wiring — flag-on path', () => {
+  let storage: Storage;
+
+  beforeEach(async () => {
+    storage = createSqliteStorage({ path: ':memory:' });
+    await storage.createUser({ id: 'user_a', email: 'a@x.com' });
+  });
+
+  afterEach(async () => {
+    await storage.close();
+  });
+
+  it('flag-on: POST /admin/login returns non-404 (route is mounted)', async () => {
+    const app = createApp({
+      session: {
+        service: createSessionService({
+          store: createSessionStore(storage),
+          ttlMs: 1000 * 60 * 60 * 24,
+          lookupUser: async (email) => {
+            const u = await storage.getUserByEmail(email);
+            if (!u) return null;
+            return { id: u.id, passwordHash: u.passwordHash };
+          },
+        }),
+      },
+    });
+    const r = await app.request('/admin/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@x.com', password: 'wrong' }),
+    });
+    // 401 (invalid_credentials or no_password_set) proves the route is mounted, not 404.
+    expect(r.status).not.toBe(404);
+    expect([400, 401]).toContain(r.status);
+  });
+
+  it('flag-off: POST /admin/login returns 404 (route not mounted)', async () => {
+    const app = createApp();
+    const r = await app.request('/admin/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@x.com', password: 'wrong' }),
+    });
+    expect(r.status).toBe(404);
   });
 });

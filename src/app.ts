@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { mountSessionRoute } from './admin/session-route.js';
 import { type MountAdminRoutesOptions, mountAdminRoutes } from './apps/routes.js';
 import type { OidcConfig } from './config.js';
 import { discoveryRoute } from './oidc/discovery-route.js';
@@ -10,6 +11,7 @@ import type { SigningKeyRegistry } from './oidc/signing-keys.js';
 import { tokenRoute } from './oidc/token-route.js';
 import { createTokenService } from './oidc/token-service.js';
 import { userinfoRoute } from './oidc/userinfo-route.js';
+import type { SessionService } from './sessions/service.js';
 import type { Storage } from './storage/interface.js';
 import type { TossAdapter } from './toss/adapter.js';
 
@@ -24,6 +26,12 @@ export interface CreateAppOptions {
     revocationStore: RevocationStore;
     now?: () => number;
   };
+  // Phase 6 placeholder. Mounted only when the env flag is on AND a service
+  // is supplied at bootstrap. Default-off: routes are not registered →
+  // Hono returns 404, indistinguishable from "endpoint does not exist."
+  session?: {
+    service: SessionService;
+  };
 }
 
 /**
@@ -37,6 +45,9 @@ export function createApp(opts: CreateAppOptions = {}): Hono {
   app.get('/healthz', (c) => c.json({ status: 'ok' }));
   if (opts.admin) {
     mountAdminRoutes(app, opts.admin);
+  }
+  if (opts.session) {
+    app.route('/', mountSessionRoute({ service: opts.session.service }));
   }
   if (opts.oidc) {
     const now = opts.oidc.now ?? (() => Math.floor(Date.now() / 1000));

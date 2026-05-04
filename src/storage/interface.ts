@@ -14,6 +14,7 @@ export interface Storage {
   createUser(input: { id: string; email: string }): Promise<User>;
   getUserById(id: string): Promise<User | null>;
   getUserByEmail(email: string): Promise<User | null>;
+  setUserPassword(userId: string, passwordHash: string): Promise<void>;
 
   // API tokens
   createApiToken(input: {
@@ -75,6 +76,8 @@ export interface Storage {
   createUserSession(input: { id: string; userId: string; expiresAt: Date }): Promise<UserSession>;
   getUserSession(id: string): Promise<UserSession | null>;
   deleteUserSession(id: string): Promise<void>;
+  deleteUserSessionsByUser(userId: string): Promise<void>;
+  purgeExpiredUserSessions(now: Date): Promise<number>;
 
   // Master keys (metadata only; bytes live in the provider)
   createMasterKey(input: {

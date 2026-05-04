@@ -77,3 +77,32 @@ describe('createApp with admin', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('createApp session-login mounting', () => {
+  const stubService = {
+    async login() {
+      return { kind: 'invalid_credentials' as const };
+    },
+    async logout() {},
+    async validate() {
+      return null;
+    },
+  };
+
+  it('does not mount /admin/login when session opts absent (flag-off)', async () => {
+    const app = createApp();
+    const r = await app.request('/admin/login', { method: 'POST' });
+    expect(r.status).toBe(404);
+  });
+
+  it('mounts /admin/login when session opts supplied (flag-on)', async () => {
+    const app = createApp({ session: { service: stubService } });
+    const r = await app.request('/admin/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'x@y', password: 'wrong' }),
+    });
+    // Real service rejects → 401. Important is that the route exists, not 404.
+    expect(r.status).toBe(401);
+  });
+});

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { asc, count, desc, eq } from 'drizzle-orm';
+import { asc, count, desc, eq, lte } from 'drizzle-orm';
 import { type BetterSQLite3Database, drizzle } from 'drizzle-orm/better-sqlite3';
 import type { Storage } from './interface.js';
 import { runSqliteMigrations } from './migrate.js';
@@ -73,6 +73,14 @@ export function createSqliteStorage(opts: SqliteStorageOptions): Storage {
     async getUserByEmail(email) {
       const [row] = await db.select().from(s.users).where(eq(s.users.email, email));
       return row ?? null;
+    },
+    async setUserPassword(userId, passwordHash) {
+      const result = await db
+        .update(s.users)
+        .set({ passwordHash })
+        .where(eq(s.users.id, userId))
+        .returning({ id: s.users.id });
+      if (result.length === 0) throw new Error(`setUserPassword: unknown user "${userId}"`);
     },
 
     async createApiToken(input) {
@@ -231,6 +239,16 @@ export function createSqliteStorage(opts: SqliteStorageOptions): Storage {
     },
     async deleteUserSession(id) {
       await db.delete(s.userSessions).where(eq(s.userSessions.id, id));
+    },
+    async deleteUserSessionsByUser(userId) {
+      await db.delete(s.userSessions).where(eq(s.userSessions.userId, userId));
+    },
+    async purgeExpiredUserSessions(now) {
+      const result = await db
+        .delete(s.userSessions)
+        .where(lte(s.userSessions.expiresAt, now))
+        .returning({ id: s.userSessions.id });
+      return result.length;
     },
 
     async createMasterKey(input) {

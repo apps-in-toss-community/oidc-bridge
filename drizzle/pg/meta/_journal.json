@@ -8,6 +8,13 @@
       "when": 1777692227535,
       "tag": "0000_friendly_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777786838142,
+      "tag": "0001_jazzy_naoko",
+      "breakpoints": true
     }
   ]
 }

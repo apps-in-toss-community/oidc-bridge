@@ -25,6 +25,7 @@ const tsCol = (name: string) => timestamp(name, { withTimezone: true, mode: 'dat
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
   createdAt: tsCol('created_at').notNull().defaultNow(),
 });
 

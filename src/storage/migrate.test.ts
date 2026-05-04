@@ -46,7 +46,27 @@ describe('runSqliteMigrations', () => {
     const applied = sqlite.prepare('SELECT hash FROM __drizzle_migrations ORDER BY id').all() as {
       hash: string;
     }[];
-    expect(applied).toHaveLength(1);
+    expect(applied.length).toBeGreaterThanOrEqual(1);
+    sqlite.close();
+  });
+
+  it('users.password_hash column exists', () => {
+    const sqlite = new Database(dbPath);
+    const db = drizzle(sqlite);
+    runSqliteMigrations(db);
+    const cols = sqlite.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain('password_hash');
+    sqlite.close();
+  });
+
+  it('user_sessions has a user_id index (created in Phase 1, kept in Phase 6)', () => {
+    const sqlite = new Database(dbPath);
+    const db = drizzle(sqlite);
+    runSqliteMigrations(db);
+    const indexes = sqlite
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='user_sessions'")
+      .all() as { name: string }[];
+    expect(indexes.map((i) => i.name)).toContain('user_sessions_user_idx');
     sqlite.close();
   });
 });

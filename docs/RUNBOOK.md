@@ -148,6 +148,72 @@ If this passes, the real adapter is wired correctly end-to-end. If it fails
 with `upstream_error`, check `apiBase`, cert validity, and that the
 authorization code is fresh (10-minute window).
 
+## Session login (preview, opt-in)
+
+`POST /admin/login` and `POST /admin/logout` are **preview endpoints** that
+issue a `__Host-bridge_session` cookie. They exist as forward-compatibility
+scaffolding for a future multi-user web console. Default behavior is unchanged:
+the routes are not registered unless both the env flag is on **and** the
+service is wired in `server.ts`. With the flag off, both endpoints return
+`404`, indistinguishable from "endpoint does not exist."
+
+**Do not depend on this surface yet.** Admin REST stays `API_TOKEN`-only —
+session auth is not accepted on `/admin/*` write paths.
+
+### Set a password (offline; sqlite only)
+
+```bash
+oidc-bridge user set-password <email> --db-path ./data/oidc-bridge.sqlite \
+  --password 'hunter2'
+# or read from stdin (recommended for scripts)
+printf 'hunter2' | oidc-bridge user set-password <email> \
+  --db-path ./data/oidc-bridge.sqlite
+```
+
+The CLI works regardless of whether the feature flag is on. Hash is bcrypt
+(cost factor 12) — the same parameters used elsewhere in the bridge.
+
+### Enable the routes
+
+Set `BRIDGE_ENABLE_SESSION_LOGIN=1`, then ensure `server.ts` constructs the
+`session` block when the flag is on. Until that wiring exists in the
+entrypoint, the flag alone is a no-op — the route module is mounted only when
+`createApp({ session: { service } })` is called explicitly.
+
+### Login flow
+
+```bash
+curl -i -X POST https://oidc-bridge.aitc.dev/admin/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"a@x.com","password":"hunter2"}'
+# 200 OK
+# set-cookie: __Host-bridge_session=<sid>; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=...
+```
+
+Cookie attributes are fixed: `__Host-` prefix (RFC 6265bis — protects against
+subdomain takeover), `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`. The
+`Secure` attribute means **session login does not work over plain HTTP** — TLS
+is mandatory.
+
+### Expired-session cleanup
+
+`runStartupTasks` purges expired `user_sessions` rows on every boot. There is
+no in-process cron — restart cadence sets the cleanup cadence. For long-lived
+deployments, a periodic restart (or an external cron calling a future
+`/admin/sessions/purge`) is appropriate.
+
+### Logout
+
+```bash
+curl -i -X POST https://oidc-bridge.aitc.dev/admin/logout \
+  -H 'cookie: __Host-bridge_session=<sid>'
+# 200 OK
+# set-cookie: __Host-bridge_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0
+```
+
+Logout is idempotent — missing or unknown cookie still returns 200 and clears
+the cookie on the client.
+
 ## When Toss changes the envelope shape
 
 1. `pnpm spike:toss` to capture fresh fixtures.

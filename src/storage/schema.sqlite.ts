@@ -14,6 +14,7 @@ const tsCol = (name: string) => integer(name, { mode: 'timestamp_ms' });
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
+  passwordHash: text('password_hash'),
   createdAt: tsCol('created_at').notNull().default(sql`(unixepoch() * 1000)`),
 });
 

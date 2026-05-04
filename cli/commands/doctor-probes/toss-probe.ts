@@ -43,10 +43,13 @@ export async function runTossProbe(opts: TossProbeOpts): Promise<ProbeItem> {
     };
   } catch (err) {
     if (err instanceof TossUpstreamError) {
-      // FAIL envelopes from /login-me surface here. Their message starts
-      // with "Toss FAIL: <CODE>: <message>" — handshake worked, AT was
-      // rejected (which is the expected outcome with a placeholder).
-      if (err.code === 'invalid_grant' || err.message.includes('Toss FAIL')) {
+      // FAIL envelopes from /login-me arrive as TossUpstreamError with code
+      // 'upstream_error' and a message starting with "Toss FAIL: <CODE>: ...".
+      // Handshake worked — Toss reached us, decoded the request, and replied
+      // with a structured error (typically INVALID_TOKEN against our
+      // placeholder AT). That's exactly what we want from a probe without a
+      // fresh authorizationCode: proof of mTLS reachability.
+      if (err.message.includes('Toss FAIL')) {
         return {
           name: 'toss',
           state: 'green',

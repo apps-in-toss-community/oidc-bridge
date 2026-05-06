@@ -231,3 +231,46 @@ the cookie on the client.
    the new shape.
 5. Open a PR with the fixture refresh + the parser change, never
    separately.
+
+## Status page (`/status`)
+
+- Public, no auth. Returns HTML by default; JSON when `Accept: application/json`
+  or `?format=json`.
+- Worst-of probes: green / yellow / red.
+- Probes: db connectivity, master key fetch, JWKS sign+verify roundtrip,
+  last-`/healthz` freshness.
+- Operators of the public instance link the status page from the homepage.
+
+## Rate limits
+
+- Per-IP: `RATE_LIMIT_IP_PER_MIN` (default `60`).
+- Per-app: `RATE_LIMIT_APP_PER_MIN` (default `600`).
+- Sliding-window, in-memory, per-instance (multi-replica deployments do
+  not share counters — acceptable for the initial release).
+- Toggle entirely with `RATE_LIMIT_ENABLED=false` (e.g. self-host on a
+  trusted network).
+- Self-hosters behind a single shared NAT will see false-positive
+  IP-rate-limit hits; raise `RATE_LIMIT_IP_PER_MIN` or disable.
+- `/healthz` and `/status` are exempt.
+
+## Structured logs
+
+- One JSON line per request: `{ time, level, request_id, method, path, status, latency_ms, user_agent, ip_hash }`.
+- IPs are sha256-hashed with `IP_HASH_SALT` (random per process unless set explicitly).
+- The pino redact list (set up in earlier phases) covers all known
+  secret-shaped fields.
+- Logs go to stdout. In `docker compose` deployments, `docker compose
+  logs -f bridge` shows them. In Cloud Run, Cloud Logging picks them up.
+- Inbound `X-Request-Id` headers are honored when they match
+  `[A-Za-z0-9_.-]{1,128}`; otherwise a fresh UUID is generated. The id
+  is echoed back in the response header and on the log line.
+
+## OpenTelemetry (opt-in)
+
+- Set `OTEL_ENABLED=1` and configure standard OTel envs
+  (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, etc.).
+- `pnpm install --include=optional` to pull `@opentelemetry/sdk-node` +
+  `auto-instrumentations-node`. Without that, the bridge logs a warning
+  at boot and continues without tracing.
+- The bridge does no OTel-specific code beyond `sdk.start()`; auto-
+  instrumentations cover Hono, undici (Toss adapter), and pg.

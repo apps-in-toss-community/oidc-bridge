@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the legacy `POST /verify` `AuthPage` in the sibling `sdk-example` repo with a Supabase-only flow that exercises the public bridge end-to-end: mini-app calls `appLogin()` → mini-app POSTs to `https://oidc-bridge.aitc.dev/oidc/token` → mini-app calls Supabase `signInWithIdToken(id_token)` → subsequent Supabase calls use the issued Supabase JWT. A "show me Toss claims" button calls `/oidc/userinfo` with the sealed `ait_access_token`. Successful E2E in production is the M5 launch gate; once green, the public instance is "launched" and the milestone closes. **The umbrella PR policy says cross-repo work ships as separate PRs**, so this plan splits into a `sdk-example` PR (nine of the tasks) and a companion `oidc-bridge` PR (two tasks: register the production app, add the prod-smoke crontab). Run them sequentially: bridge-side prep first, then sdk-example wiring, then the production smoke gate.
+**Goal:** Replace the legacy `POST /verify` `AuthPage` in the sibling `sdk-example` repo with a Supabase-only flow that exercises the public bridge end-to-end: mini-app calls `appLogin()` → mini-app POSTs to `https://oidc-bridge.aitc.dev/oidc/token` → mini-app calls Supabase `signInWithIdToken(id_token)` → subsequent Supabase calls use the issued Supabase JWT. A "show me Toss claims" button calls `/oidc/userinfo` with the sealed `ait_access_token`. Successful E2E in production is the M5 launch gate; once green, the public instance is "launched" and the milestone closes. **Cross-repo work ships as separate PRs**, so this plan splits into a `sdk-example` PR (nine of the tasks) and a companion `oidc-bridge` PR (two tasks: register the production app, add the prod-smoke crontab). Run them sequentially: bridge-side prep first, then sdk-example wiring, then the production smoke gate.
 
 **Architecture:** sdk-example's `AuthPage` becomes a Supabase-only React component. `appLogin()` returns `{ authorizationCode, referrer }`; the page POSTs that to `/oidc/token` with `grant_type=authorization_code`, `client_id=<sdk-example-client-id>`, no `client_secret` (public client; the bridge's CORS-validated `Origin` allowlist authenticates), and a stable `code_verifier` derived from a session-scoped random `code_challenge` (PKCE optional per spec decision #9 but used here as defense-in-depth). The response carries `id_token` (RS256) + `access_token` (`ait_<base64url>`) + `refresh_token` (`ait_<base64url>`); the page hands `id_token` to `supabase.auth.signInWithIdToken({ provider: 'toss', token: id_token })` per Supabase's third-party-OIDC protocol, with the bridge's issuer (`https://oidc-bridge.aitc.dev`) configured as a third-party provider in the Supabase project. The page stashes the sealed access_token in `sessionStorage` (mini-app reload survives) and uses it on the "show me Toss claims" button to call `/oidc/userinfo`. Refresh runs through the bridge: when Supabase rejects expired tokens, the page POSTs `{ grant_type: 'refresh_token', refresh_token, client_id }` to `/oidc/token` and re-runs `signInWithIdToken` with the fresh `id_token`. Production E2E lives in this repo as a Playwright test gated by `BRIDGE_PROD_E2E=1` and runs nightly via GitHub Actions cron.
 
@@ -88,9 +88,8 @@ Before you begin Task 1, do this in order. It's about twenty minutes and prevent
    - `/oidc/userinfo` is `GET` with `Authorization: Bearer ait_<...>`.
    - PKCE is supported (S256 challenge method).
 3. Read the [Supabase third-party OIDC docs](https://supabase.com/docs/guides/auth/social-login/auth-thirdparty) once. The integration model: bridge issuer URL is registered in Supabase's auth settings; Supabase fetches `/.well-known/openid-configuration` and `/.well-known/jwks.json` to verify id_tokens. `signInWithIdToken({ provider: 'toss', token: id_token })` is the call shape — sdk-example needs the bridge's `iss` and `aud` to match what's configured in Supabase, which Phase 10 already arranged.
-4. Read the umbrella `CLAUDE.md` "짝(pair) 관계" section, specifically the `sdk-example ← 전부` and `sdk-example ↔ docs` rows — they describe how sdk-example consumes the bridge and how doc deep-links work.
-5. Read sdk-example's current `AuthPage.tsx` (sibling repo) to know exactly what's being replaced. Capture the existing component's surface (props, callbacks, side effects) so the replacement maintains compatible navigation/state behavior even though the auth call changes.
-6. Verify Supabase project state: a project exists, third-party OIDC is *not yet configured* with the bridge issuer (this phase configures it in Task 8), and there is at least one test user table or RLS-protected resource the spec can touch to verify "subsequent Supabase API calls use the resulting Supabase JWT" (spec §11 bullet 4).
+4. Read sdk-example's current `AuthPage.tsx` (sibling repo) to know exactly what's being replaced. Capture the existing component's surface (props, callbacks, side effects) so the replacement maintains compatible navigation/state behavior even though the auth call changes.
+5. Verify Supabase project state: a project exists, third-party OIDC is *not yet configured* with the bridge issuer (this phase configures it in Task 8), and there is at least one test user table or RLS-protected resource the spec can touch to verify "subsequent Supabase API calls use the resulting Supabase JWT" (spec §11 bullet 4).
 
 When that's done, start Task 1.
 
@@ -1595,7 +1594,7 @@ gh secret set PLAYWRIGHT_STORAGE_STATE_B64 \
 
 - [ ] **Step 6: Run the launch verification flow from `docs/LAUNCH.md`**
 
-Run all four steps under "Launch verification". If all pass: M5 is launched. Update the umbrella `TODO.md` to reflect launch.
+Run all four steps under "Launch verification". If all pass: M5 is launched.
 
 - [ ] **Step 7: Trigger the nightly cron once manually to confirm it works**
 
@@ -1625,8 +1624,7 @@ Phase 11, and therefore the M5 launch milestone, is done when:
 5. `docs/LAUNCH.md` "Launch verification" all four steps pass.
 6. The Phase 11 sdk-example PR and the Phase 11 oidc-bridge PR are both
    merged with both reviewers' approval.
-7. The umbrella `TODO.md` reflects the launched state, and the
-   landing-page README (`apps-in-toss-community.github.io/content/`)
+7. The landing-page README (`apps-in-toss-community.github.io/content/`)
    notes the public bridge as launched (a small, separate edit done by
    the operator after this phase closes — not part of this plan).
 

@@ -55,9 +55,8 @@ Outbound mTLS is awkward in the runtimes our target users operate in:
 The bridge is not optional convenience — without it, Supabase Edge and
 Firebase Spark users have no realistic way to integrate Toss login. The
 public bridge instance must therefore be operated as a real product (Vultr
-Seoul VPS + Cloudflare → `oidc-bridge.aitc.dev`, per umbrella domain
-policy), and the self-host path must remain first-class so security-sensitive
-operators can run their own.
+Seoul VPS + Cloudflare → `oidc-bridge.aitc.dev`), and the self-host path
+must remain first-class so security-sensitive operators can run their own.
 
 ## 3. Scope
 

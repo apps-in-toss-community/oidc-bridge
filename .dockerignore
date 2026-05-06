@@ -1,20 +1,63 @@
-node_modules
-dist
-coverage
+# .dockerignore — keep build context minimal and reproducible.
+#
+# Anything not strictly needed at runtime (or in the build stage) stays out.
+# The deployment artifacts (docker-compose.yml, Caddyfile, docker/) are also
+# excluded — they're consumed by docker compose on the host, never inside the
+# image.
+
+# git + editor metadata
 .git
+.gitignore
 .github
-.claude
 .vscode
 .idea
-*.log
 .DS_Store
+*.log
+
+# node + pnpm
+node_modules
+**/node_modules
+.pnpm-store
+
+# build artifacts that the image rebuilds
+dist
+coverage
+.tsbuildinfo
+*.tsbuildinfo
+
+# tests + fixtures (image runs dist/; tests stay on host)
+test
+**/__tests__
+**/__fixtures__
+*.test.ts
+*.spec.ts
+
+# tooling not needed at runtime
+.eslintrc*
+biome.json
+biome.jsonc
+vitest.config.*
+tsdown.config.*
+
+# dev / ops files
 .env
 .env.*
 !.env.example
+.envrc
+docker-compose.yml
+docker-compose.*.yml
+Caddyfile
+docker/
 README.md
 TODO.md
 CLAUDE.md
+MIGRATION.md
 docs
 
-docker-compose.yml
-Caddyfile
+# claude code / superpowers metadata
+.claude
+.superpowers
+docs/superpowers
+
+# worktrees (umbrella convention)
+oidc-bridge-*/

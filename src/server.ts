@@ -6,15 +6,23 @@ import { decryptColumn } from './apps/encryption.js';
 import type { Stage } from './apps/ownership.js';
 import type { MountAdminRoutesOptions } from './apps/routes.js';
 import { createService } from './apps/service.js';
-import { loadBridgeFlags, loadOidcConfig, loadTossConfig } from './config.js';
+import {
+  loadBridgeFlags,
+  loadObservabilityConfig,
+  loadOidcConfig,
+  loadRateLimitConfig,
+  loadTossConfig,
+} from './config.js';
 import { createLogger } from './logger.js';
 import { createMasterKeyProvider, deriveSealingKey } from './master-keys/index.js';
 import type { MasterKeyProvider } from './master-keys/provider.js';
+import { maybeStartOtel } from './observability/otel.js';
 import { createAppSealingKeyResolver } from './oidc/app-sealing-key.js';
 import { createInMemoryRevocationStore } from './oidc/revocation-store.js';
 import { createSigningKeyRegistry } from './oidc/signing-keys.js';
 import { createSessionService } from './sessions/service.js';
 import { createSessionStore } from './sessions/store.js';
+import { runStatusProbes } from './status/probes.js';
 import type { Storage } from './storage/interface.js';
 import { createPgStorage } from './storage/pg.js';
 import { createSqliteStorage } from './storage/sqlite.js';
@@ -118,6 +126,16 @@ async function main() {
   const log = createLogger();
   const port = Number(process.env.PORT ?? 8080);
 
+  const otelStatus = await maybeStartOtel();
+  if (otelStatus.kind === 'missing') {
+    log.warn(
+      { reason: otelStatus.reason },
+      'OTEL_ENABLED=1 but @opentelemetry packages not installed (run `pnpm install --include=optional`)',
+    );
+  } else if (otelStatus.kind === 'started') {
+    log.info('OpenTelemetry SDK started');
+  }
+
   const storage = await openStorage();
   const startupResult = await runStartupTasks({ storage });
   log.info({ purgedSessions: startupResult.purgedSessions }, 'startup tasks complete');
@@ -167,6 +185,50 @@ async function main() {
     log.warn('admin REST not mounted: no active master key (run `oidc-bridge bootstrap` first)');
   }
 
+  const observabilityConfig = loadObservabilityConfig(process.env);
+  const rateLimitConfig = loadRateLimitConfig(process.env);
+  log.info(
+    {
+      version: observabilityConfig.version,
+      buildSha: observabilityConfig.buildSha,
+      rateLimit: rateLimitConfig,
+    },
+    'phase-8 wiring',
+  );
+
+  const storageEnv = (process.env.STORAGE ?? 'sqlite').toLowerCase();
+  const sqlitePath = process.env.SQLITE_PATH ?? './data/oidc-bridge.sqlite';
+  const databaseUrl = process.env.DATABASE_URL;
+  const masterKeyProviderKind = (process.env.MASTER_KEY_PROVIDER ?? 'env').toLowerCase() as
+    | 'env'
+    | 'file'
+    | 'gcpsm';
+  const masterKeyDir = process.env.MASTER_KEY_DIR;
+  const signingKeysRecord: Record<string, string> = Object.fromEntries(
+    oidcConfig.signingKeys.map((s) => [s.kid, s.pem]),
+  );
+  const probes = async () => {
+    const all = await storage.listMasterKeys();
+    const active = all.filter((m) => m.retiredAt === null).map((m) => m.version);
+    const masterKeyVersion = active.length > 0 ? Math.max(...active) : 1;
+    return runStatusProbes({
+      db:
+        storageEnv === 'pg'
+          ? { storage: 'pg', connectionString: databaseUrl ?? '' }
+          : { storage: 'sqlite', sqlitePath },
+      masterKey: {
+        provider: masterKeyProviderKind,
+        masterKeyDir,
+        version: masterKeyVersion,
+        env: process.env,
+      },
+      jwks: {
+        activeKid: oidcConfig.activeKid,
+        signingKeys: signingKeysRecord,
+      },
+    });
+  };
+
   const appOpts = {
     oidc: {
       config: oidcConfig,
@@ -178,6 +240,13 @@ async function main() {
     },
     ...(admin ? { admin } : {}),
     ...(session ? { session } : {}),
+    observability: { logger: log, ipHashSalt: observabilityConfig.ipHashSalt },
+    rateLimit: rateLimitConfig,
+    status: {
+      version: observabilityConfig.version,
+      buildSha: observabilityConfig.buildSha,
+      probes,
+    },
   };
   const app = createApp(appOpts);
 

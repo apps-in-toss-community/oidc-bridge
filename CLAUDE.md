@@ -2,14 +2,23 @@
 
 ## 프로젝트 성격
 
-비공식(unofficial) 커뮤니티 프로젝트. 사용자에게 보이는 산출물에서 "공식/official/powered by Toss" 등 제휴·인증 암시 표현 금지. 공용 인스턴스는 **rate-limited, best-effort, community-operated**. 상세는 umbrella [`CLAUDE.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/CLAUDE.md)의 "프로젝트 성격" 참조.
+**비공식(unofficial) 커뮤니티 프로젝트**. 토스/앱인토스 팀과 제휴·후원·인증 관계 없음. 공용 인스턴스(`oidc-bridge.aitc.dev`)는 **rate-limited, best-effort, community-operated** — SLA 없음.
+
+사용자에게 보이는 모든 산출물(README, UI 카피, 패키지 설명, 커밋/PR 메시지, 코드 주석 등)에서 다음 표현 **금지**:
+
+- "공식(official)", "공식 도구/플러그인", "토스가 제공하는", "앱인토스에서 만든", "powered by Toss"
+- 토스와의 제휴/후원/인증을 암시하는 모든 표현
+
+대신 "커뮤니티(community)", "오픈소스", "비공식(unofficial)". 의심스러우면 빼라.
+
+이슈/제안은 GitHub Issues로.
 
 ## 짝 repo
 
+기본적으로 **독립 서비스** — launch만 `sdk-example` dog-fooding에 묶인다.
+
 - **`sdk-example`** — bridge M5 launch gate가 여기로 묶인다. sdk-example의 `AuthPage`가 옛 `POST /verify`를 버리고 Supabase Edge Function (`supabase/functions/toss-login`)으로 `/oidc/token` → `signInWithIdToken` 경로를 만든다. 이 Edge Function이 README와 `agent-plugin` 템플릿의 canonical reference.
 - **`agent-plugin`** — `/ait new` auth 옵션이 이 bridge를 가리킨다.
-
-다른 repo와의 전체 짝 그림은 umbrella [`CLAUDE.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/CLAUDE.md)의 "짝(pair) 관계" 참조. 기본적으로 **독립 서비스** — launch만 sdk-example dog-fooding에 묶인다.
 
 ## 프로젝트 개요
 
@@ -142,13 +151,21 @@ mTLS cert + key (PEM)는 `apps` 테이블 컬럼에 per-app sealing key로 봉�
 
 ## MCP 전략
 
-**공용 MCP는 제공하지 않는다.** `oidc-bridge`의 기능은 전부 표준 OIDC HTTP로 노출되므로 에이전트가 `WebFetch`/`Bash`로 바로 호출 가능. 관리자 전용 remote MCP는 ops introspection용으로 고려하되 HTTP API + OpenTelemetry 구축 후. 판별 기준은 umbrella [`meta/mcp-strategy.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/meta/mcp-strategy.md) 참조.
+**공용 MCP는 제공하지 않는다.** `oidc-bridge`의 기능은 전부 표준 OIDC HTTP로 노출되므로 에이전트가 `WebFetch`/`Bash`로 바로 호출 가능. 관리자 전용 remote MCP는 ops introspection용으로 고려하되 HTTP API + OpenTelemetry 구축 후.
 
 ## 기술 스택 (repo-specific)
 
 TypeScript ESM strict / **Hono** (+ `@hono/node-server`) / **Drizzle ORM** + **drizzle-kit** (Postgres + SQLite, hand-mirrored schemas) / **`pg`** (node-postgres) / **better-sqlite3** (sync, native binding — pnpm `onlyBuiltDependencies`) / **jose** (ID token sign+verify, JWKS) / **bcryptjs** (client_secret hash) / **@google-cloud/secret-manager** (lazy) / **undici** (HTTP/mTLS dispatcher) / **commander** (CLI) / **pino** + **pino-pretty** (logging) / **node:crypto** + **node:tls** (AEAD, HKDF, mTLS Agent) / **tsdown** 빌드 / **vitest** 테스트.
 
-조직 공통 스택(Node 24, pnpm 10.33.0, Biome lint+format, pre-commit hook 등)은 umbrella [`CLAUDE.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/CLAUDE.md)의 "공통 스택" 참조.
+## 공통 스택
+
+Node 24 LTS, **pnpm 10.33.0** (`packageManager` 고정), TypeScript strict, **Biome** (lint + formatter — ESLint/Prettier 사용 안 함). Pre-commit hook은 source-controlled (`.githooks/pre-commit`)이며, contributor가 수동으로 활성화한다:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+CI의 `pnpm lint`가 실제 강제 계층, hook은 빠른 피드백 용도. Commit message는 Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`).
 
 ## 명령어
 
@@ -180,13 +197,7 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 
 ## 릴리즈 정책
 
-**Type C (서비스 repo)**. main push = 배포. **Changesets 미사용**, Docker 이미지 tag가 버전 역할. 공용 인스턴스: main push → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>` → SSH로 Vultr Seoul VPS에 `docker compose pull && up -d` (`.github/workflows/deploy.yml`). 상세 셋업은 [`docs/DEPLOY.md`](./docs/DEPLOY.md). Self-host는 동일 이미지를 자기 인프라에 (`RATE_LIMIT_ENABLED=false` 기본). 의미 있는 마일스톤은 GitHub Release 수동.
-
-조직 전체 release 정책 매트릭스는 umbrella [`CLAUDE.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/CLAUDE.md) 및 [`meta/release-strategy.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/meta/release-strategy.md) 참조.
-
-## TODO
-
-조직 단일 source는 umbrella [`TODO.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/TODO.md). 이 repo의 `TODO.md`는 umbrella를 가리키는 stub.
+**서비스 repo** — main push = 배포. **Changesets 미사용**, Docker 이미지 tag가 버전 역할. 공용 인스턴스: main push → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>` → SSH로 Vultr Seoul VPS에 `docker compose pull && up -d` (`.github/workflows/deploy.yml`). 상세 셋업은 [`docs/DEPLOY.md`](./docs/DEPLOY.md). Self-host는 동일 이미지를 자기 인프라에 (`RATE_LIMIT_ENABLED=false` 기본). 의미 있는 마일스톤은 GitHub Release 수동.
 
 ## 마일스톤 (Phase 0..11)
 
@@ -253,7 +264,6 @@ runtime image는 `node:24-alpine` 유지(슬림). 그러나 builder stage는 `ap
 - Subagent reviewer가 잘못된 주장(e.g. "SQLite expression index DESC 안 됨")을 할 때는 empirical refute로 끝내고 진행. 끌려가지 않는다.
 - 실행 흐름은 `superpowers:subagent-driven-development` skill에 정리되어 있다.
 
-### Repo-specific commit/PR
+### Repo-specific PR 운영
 
-- Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`).
-- 한 phase = 한 PR = main으로 squash merge. `gh pr merge --delete-branch`이 메인 worktree가 main을 점유 중일 때 실패하면, 머지는 GitHub 쪽에서 이미 끝났으니 메인 worktree에서 `git pull --ff-only`로 동기화.
+한 phase = 한 PR = main으로 squash merge. `gh pr merge --delete-branch`이 메인 worktree가 main을 점유 중일 때 실패하면, 머지는 GitHub 쪽에서 이미 끝났으니 메인 worktree에서 `git pull --ff-only`로 동기화.

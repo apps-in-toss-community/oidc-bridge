@@ -12,6 +12,7 @@ import { tokenRoute } from './oidc/token-route.js';
 import { createTokenService } from './oidc/token-service.js';
 import { userinfoRoute } from './oidc/userinfo-route.js';
 import type { SessionService } from './sessions/service.js';
+import { recordHealthz } from './status/last-healthz.js';
 import type { Storage } from './storage/interface.js';
 import type { TossAdapter } from './toss/adapter.js';
 
@@ -42,7 +43,10 @@ export interface CreateAppOptions {
  */
 export function createApp(opts: CreateAppOptions = {}): Hono {
   const app = new Hono();
-  app.get('/healthz', (c) => c.json({ status: 'ok' }));
+  app.get('/healthz', (c) => {
+    recordHealthz();
+    return c.json({ status: 'ok' });
+  });
   if (opts.admin) {
     mountAdminRoutes(app, opts.admin);
   }

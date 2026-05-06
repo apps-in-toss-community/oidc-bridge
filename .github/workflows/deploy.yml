@@ -157,6 +157,14 @@ jobs:
           emit ID_TOKEN_TTL_SECONDS
           emit OIDC_DEFAULT_SCOPE
 
+          # appleboy/scp-action runs inside a container that tars the source
+          # files as a different uid. The 0600 file produced by `umask 077`
+          # is unreadable inside the container and tar fails. The .env on
+          # the VPS still ends up 0600 because the next-step `chmod 600`
+          # runs before the atomic rename to .env, and the workflow runner
+          # itself is single-tenant so a brief 0644 here is fine.
+          chmod 644 .env.render
+
           echo "rendered $(grep -c '^[A-Z]' .env.render) env var(s) into .env.render"
 
       # Sync the compose stack + rendered .env to the VPS. The .env is uploaded

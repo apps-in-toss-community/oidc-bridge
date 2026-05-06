@@ -71,3 +71,50 @@ export function loadBridgeFlags(env: NodeJS.ProcessEnv = process.env): BridgeFla
     enableSessionLogin: env.BRIDGE_ENABLE_SESSION_LOGIN === '1',
   };
 }
+
+export interface ObservabilityConfig {
+  ipHashSalt: string;
+  buildSha: string;
+  version: string;
+}
+
+export interface RateLimitConfig {
+  enabled: boolean;
+  ipPerMin: number;
+  appPerMin: number;
+}
+
+export function loadObservabilityConfig(env: NodeJS.ProcessEnv = process.env): ObservabilityConfig {
+  // ipHashSalt defaults to a per-process random — restart rotates the hash
+  // mapping (acceptable for an analytics aid, not a long-term identifier).
+  const fallbackSalt = randomHex(16);
+  return {
+    ipHashSalt: env.IP_HASH_SALT ?? fallbackSalt,
+    buildSha: env.BRIDGE_BUILD_SHA ?? 'dev',
+    version: env.BRIDGE_VERSION ?? '0.0.0-dev',
+  };
+}
+
+export function loadRateLimitConfig(env: NodeJS.ProcessEnv = process.env): RateLimitConfig {
+  const ipPerMin = Number(env.RATE_LIMIT_IP_PER_MIN ?? 60);
+  const appPerMin = Number(env.RATE_LIMIT_APP_PER_MIN ?? 600);
+  if (!Number.isFinite(ipPerMin) || ipPerMin <= 0) {
+    throw new Error('RATE_LIMIT_IP_PER_MIN must be a positive number');
+  }
+  if (!Number.isFinite(appPerMin) || appPerMin <= 0) {
+    throw new Error('RATE_LIMIT_APP_PER_MIN must be a positive number');
+  }
+  return {
+    enabled: env.RATE_LIMIT_ENABLED !== 'false',
+    ipPerMin,
+    appPerMin,
+  };
+}
+
+function randomHex(bytes: number): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  let out = '';
+  for (const b of arr) out += b.toString(16).padStart(2, '0');
+  return out;
+}

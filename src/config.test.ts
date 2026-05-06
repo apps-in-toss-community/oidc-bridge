@@ -83,3 +83,55 @@ describe('loadBridgeFlags', () => {
     expect(loadBridgeFlags({ BRIDGE_ENABLE_SESSION_LOGIN: '1' }).enableSessionLogin).toBe(true);
   });
 });
+
+describe('loadObservabilityConfig', () => {
+  it('defaults version + buildSha to dev when env unset', async () => {
+    const { loadObservabilityConfig } = await import('./config.js');
+    const c = loadObservabilityConfig({});
+    expect(c.version).toBe('0.0.0-dev');
+    expect(c.buildSha).toBe('dev');
+    expect(c.ipHashSalt).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('honors BRIDGE_VERSION + BRIDGE_BUILD_SHA + IP_HASH_SALT when set', async () => {
+    const { loadObservabilityConfig } = await import('./config.js');
+    const c = loadObservabilityConfig({
+      BRIDGE_VERSION: '1.2.3',
+      BRIDGE_BUILD_SHA: 'abcdef0',
+      IP_HASH_SALT: 'fixed-salt',
+    });
+    expect(c.version).toBe('1.2.3');
+    expect(c.buildSha).toBe('abcdef0');
+    expect(c.ipHashSalt).toBe('fixed-salt');
+  });
+});
+
+describe('loadRateLimitConfig', () => {
+  it('defaults: enabled=true, ipPerMin=60, appPerMin=600', async () => {
+    const { loadRateLimitConfig } = await import('./config.js');
+    expect(loadRateLimitConfig({})).toEqual({ enabled: true, ipPerMin: 60, appPerMin: 600 });
+  });
+
+  it('RATE_LIMIT_ENABLED=false disables; any other value keeps it enabled', async () => {
+    const { loadRateLimitConfig } = await import('./config.js');
+    expect(loadRateLimitConfig({ RATE_LIMIT_ENABLED: 'false' }).enabled).toBe(false);
+    expect(loadRateLimitConfig({ RATE_LIMIT_ENABLED: '0' }).enabled).toBe(true);
+    expect(loadRateLimitConfig({ RATE_LIMIT_ENABLED: 'true' }).enabled).toBe(true);
+  });
+
+  it('honors numeric overrides', async () => {
+    const { loadRateLimitConfig } = await import('./config.js');
+    expect(
+      loadRateLimitConfig({ RATE_LIMIT_IP_PER_MIN: '120', RATE_LIMIT_APP_PER_MIN: '1200' }),
+    ).toEqual({ enabled: true, ipPerMin: 120, appPerMin: 1200 });
+  });
+
+  it('rejects non-positive limits', async () => {
+    const { loadRateLimitConfig } = await import('./config.js');
+    expect(() => loadRateLimitConfig({ RATE_LIMIT_IP_PER_MIN: '0' })).toThrow(/positive/);
+    expect(() => loadRateLimitConfig({ RATE_LIMIT_APP_PER_MIN: '-1' })).toThrow(/positive/);
+    expect(() => loadRateLimitConfig({ RATE_LIMIT_IP_PER_MIN: 'not-a-number' })).toThrow(
+      /positive/,
+    );
+  });
+});

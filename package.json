@@ -55,6 +55,10 @@
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
+  "optionalDependencies": {
+    "@opentelemetry/auto-instrumentations-node": "^0.74.0",
+    "@opentelemetry/sdk-node": "^0.216.0"
+  },
   "keywords": [
     "apps-in-toss",
     "toss",

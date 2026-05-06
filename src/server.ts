@@ -16,6 +16,7 @@ import {
 import { createLogger } from './logger.js';
 import { createMasterKeyProvider, deriveSealingKey } from './master-keys/index.js';
 import type { MasterKeyProvider } from './master-keys/provider.js';
+import { maybeStartOtel } from './observability/otel.js';
 import { createAppSealingKeyResolver } from './oidc/app-sealing-key.js';
 import { createInMemoryRevocationStore } from './oidc/revocation-store.js';
 import { createSigningKeyRegistry } from './oidc/signing-keys.js';
@@ -124,6 +125,16 @@ export async function buildAdminBlock(
 async function main() {
   const log = createLogger();
   const port = Number(process.env.PORT ?? 8080);
+
+  const otelStatus = await maybeStartOtel();
+  if (otelStatus.kind === 'missing') {
+    log.warn(
+      { reason: otelStatus.reason },
+      'OTEL_ENABLED=1 but @opentelemetry packages not installed (run `pnpm install --include=optional`)',
+    );
+  } else if (otelStatus.kind === 'started') {
+    log.info('OpenTelemetry SDK started');
+  }
 
   const storage = await openStorage();
   const startupResult = await runStartupTasks({ storage });

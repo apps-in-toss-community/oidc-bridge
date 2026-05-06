@@ -91,9 +91,17 @@ function handleError(err: unknown, onUnexpectedError?: (err: unknown) => void) {
   );
 }
 
+// Routes under `/admin/*` that authenticate with their own scheme (e.g. cookie
+// session) instead of the API_TOKEN bearer. These must be exempt from
+// `adminAuth` so a user can sign in without already holding an admin bearer.
+const PUBLIC_ADMIN_PATHS: ReadonlySet<string> = new Set(['/admin/login', '/admin/logout']);
+
 export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void {
   const auth = adminAuth({ service: opts.service, requireScope: 'admin' });
-  app.use('/admin/*', auth);
+  app.use('/admin/*', async (c, next) => {
+    if (PUBLIC_ADMIN_PATHS.has(c.req.path)) return next();
+    return auth(c, next);
+  });
 
   app.post('/admin/workspaces', async (c) => {
     const json = await c.req.json().catch(() => ({}));

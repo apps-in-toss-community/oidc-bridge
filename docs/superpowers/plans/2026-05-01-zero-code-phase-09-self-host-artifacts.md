@@ -137,7 +137,7 @@ scripts/*.sh
 .superpowers
 docs/superpowers
 
-# worktrees (umbrella convention)
+# worktrees
 oidc-bridge-*/
 ```
 
@@ -180,7 +180,7 @@ The image is three stages: `deps` (production-only `node_modules`), `build` (ful
 FROM node:24-alpine@sha256:PINME AS deps
 
 # corepack ships with node:24 but is disabled by default. Activate the exact pnpm version
-# the umbrella pins (10.33.0) so the lockfile resolves identically in the image and on dev.
+# this repo pins (10.33.0) so the lockfile resolves identically in the image and on dev.
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
 WORKDIR /app
@@ -1018,7 +1018,7 @@ git commit -m "feat: docker/.env.example operator template"
 **Files:**
 - Create: `docs/SECURITY.md`
 
-`SECURITY.md` lives at `docs/` (not the repo root) per the umbrella convention. GitHub picks up `.github/SECURITY.md` for the "Report a vulnerability" link; this phase does not introduce that file (umbrella org-level `.github` repo carries it). The doc here is the threat model, not the disclosure form.
+`SECURITY.md` lives at `docs/` (not the repo root). GitHub picks up `.github/SECURITY.md` for the "Report a vulnerability" link; this phase does not introduce that file (the org-level `.github` repo carries it). The doc here is the threat model, not the disclosure form.
 
 - [ ] **Step 1: Write `docs/SECURITY.md`**
 
@@ -1300,8 +1300,6 @@ intact (sealing key is HKDF-derived and stable across DB restores).
 
 - [`docs/SECURITY.md`](./SECURITY.md) — threat model.
 - [`docs/RUNBOOK.md`](./RUNBOOK.md) — day-to-day operator commands.
-- [umbrella `meta/release-strategy.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/meta/release-strategy.md)
-  — image versioning, release cadence.
 ```
 
 - [ ] **Step 2: Verify the section appended cleanly**

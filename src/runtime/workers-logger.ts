@@ -6,7 +6,7 @@
  * shape (msg, time, level as string, service in base bindings).
  */
 import type { Logger } from '../core/logger.js';
-import { REDACT_PATHS } from './node-logger.js';
+import { REDACT_PATHS } from '../core/logger-redact.js';
 
 export interface WorkersLoggerOptions {
   level?: 'debug' | 'info' | 'warn' | 'error' | 'fatal';

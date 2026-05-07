@@ -1,7 +1,8 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import { toBase64Url } from '../core/bytes.js';
+import { constantTimeEquals, fromHex, fromUtf8, toBase64Url, toHex } from '../core/bytes.js';
+import type { Digest } from '../core/digest.js';
 import type { Random } from '../core/random.js';
+import { nodeDigest } from '../runtime/node-digest.js';
 import { nodeRandom } from '../runtime/node-random.js';
 
 const BCRYPT_ROUNDS = 12;
@@ -25,13 +26,18 @@ export function generateApiToken(random: Random = nodeRandom): string {
   return `tok_${toBase64Url(random.bytes(32))}`;
 }
 
-export function hashApiToken(token: string): string {
-  return createHash('sha256').update(token, 'utf8').digest('hex');
+export async function hashApiToken(token: string, digest: Digest = nodeDigest): Promise<string> {
+  const h = await digest.digest('SHA-256', fromUtf8(token));
+  return toHex(h);
 }
 
-export function verifyApiToken(plain: string, hash: string): boolean {
-  const computed = Buffer.from(hashApiToken(plain), 'hex');
-  const expected = Buffer.from(hash, 'hex');
-  if (computed.length !== expected.length) return false;
-  return timingSafeEqual(computed, expected);
+export async function verifyApiToken(
+  plain: string,
+  hash: string,
+  digest: Digest = nodeDigest,
+): Promise<boolean> {
+  const computedHex = await hashApiToken(plain, digest);
+  const computed = fromHex(computedHex);
+  const expected = fromHex(hash);
+  return constantTimeEquals(computed, expected);
 }

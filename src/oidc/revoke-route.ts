@@ -69,7 +69,7 @@ export function revokeRoute(opts: RevokeRouteOpts) {
       return c.body(null, 200);
     }
 
-    opts.revocationStore.revoke({ appId, token });
+    await opts.revocationStore.revoke({ appId, token });
 
     // RFC 7009 §2.1: when the hint mismatches the actual token type, the
     // server is RECOMMENDED to search across all supported types. The sealed

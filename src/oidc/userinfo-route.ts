@@ -41,7 +41,7 @@ export function userinfoRoute(opts: UserinfoRouteOpts) {
     const appRow = await opts.storage.getApp(appId);
     if (!appRow) return bearerError(c, 'unknown app');
 
-    if (opts.revocationStore.isRevoked({ appId, token })) {
+    if (await opts.revocationStore.isRevoked({ appId, token })) {
       return bearerError(c, 'token revoked');
     }
 

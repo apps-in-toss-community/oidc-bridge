@@ -111,7 +111,7 @@ describe('GET /oidc/raw-tokens', () => {
   it('returns 401 when token revoked', async () => {
     const at = makeAt(enabledApp);
     const store = createInMemoryRevocationStore();
-    store.revoke({ appId: enabledApp.id, token: at });
+    await store.revoke({ appId: enabledApp.id, token: at });
     const h = buildHarness(enabledApp, { store });
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },

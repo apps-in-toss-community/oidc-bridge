@@ -263,7 +263,7 @@ export function createService(opts: CreateServiceOptions): Service {
   const apiTokens: Service['apiTokens'] = {
     async create(ctx, input) {
       const plaintext = generateApiToken();
-      const tokenHash = hashApiToken(plaintext);
+      const tokenHash = await hashApiToken(plaintext);
       const token = await storage.createApiToken({
         id: newId('api_token'),
         userId: ctx.actorUserId,
@@ -298,7 +298,7 @@ export function createService(opts: CreateServiceOptions): Service {
     },
     async verify(plain) {
       if (!plain.startsWith('tok_')) return null;
-      const hash = hashApiToken(plain);
+      const hash = await hashApiToken(plain);
       const row = await storage.getApiTokenByHash(hash);
       if (!row) return null;
       const user = await storage.getUserById(row.userId);

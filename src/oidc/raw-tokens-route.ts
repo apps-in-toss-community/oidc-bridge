@@ -55,7 +55,7 @@ export function rawTokensRoute(opts: RawTokensRouteOpts) {
       return c.json({ error: 'not_found' }, 404);
     }
 
-    if (opts.revocationStore.isRevoked({ appId, token })) {
+    if (await opts.revocationStore.isRevoked({ appId, token })) {
       return bearerError(c, 'revoked');
     }
 

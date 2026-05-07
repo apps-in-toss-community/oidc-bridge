@@ -117,7 +117,7 @@ describe('POST /oidc/revoke', () => {
       body: `token=${encodeURIComponent(at)}&token_type_hint=access_token`,
     });
     expect(res.status).toBe(200);
-    expect(store.isRevoked({ appId: baseApp.id, token: at })).toBe(true);
+    expect(await store.isRevoked({ appId: baseApp.id, token: at })).toBe(true);
     expect(adapter.accessRemoveCalls).toEqual([{ appId: baseApp.id, userKey: '42' }]);
   });
 
@@ -130,7 +130,7 @@ describe('POST /oidc/revoke', () => {
       body: `token=${encodeURIComponent(tok)}`,
     });
     expect(res.status).toBe(200);
-    expect(store.isRevoked({ appId: baseApp.id, token: tok })).toBe(true);
+    expect(await store.isRevoked({ appId: baseApp.id, token: tok })).toBe(true);
     expect(adapter.accessRemoveCalls).toEqual([{ appId: baseApp.id, userKey: '42' }]);
   });
 
@@ -143,7 +143,7 @@ describe('POST /oidc/revoke', () => {
       body: JSON.stringify({ token: tok, token_type_hint: 'refresh_token' }),
     });
     expect(res.status).toBe(200);
-    expect(store.isRevoked({ appId: baseApp.id, token: tok })).toBe(true);
+    expect(await store.isRevoked({ appId: baseApp.id, token: tok })).toBe(true);
     expect(adapter.accessRemoveCalls).toEqual([{ appId: baseApp.id, userKey: '42' }]);
   });
 
@@ -157,7 +157,7 @@ describe('POST /oidc/revoke', () => {
     });
     expect(res.status).toBe(200);
     expect(adapter.accessRemoveCalls).toEqual([{ appId: baseApp.id, userKey: '42' }]);
-    expect(store.isRevoked({ appId: baseApp.id, token: rt })).toBe(true);
+    expect(await store.isRevoked({ appId: baseApp.id, token: rt })).toBe(true);
   });
 
   it('still returns 200 even if accessRemove on Toss fails', async () => {
@@ -180,7 +180,7 @@ describe('POST /oidc/revoke', () => {
       body: `token=${encodeURIComponent(rt)}&token_type_hint=refresh_token`,
     });
     expect(res.status).toBe(200);
-    expect(store.isRevoked({ appId: baseApp.id, token: rt })).toBe(true);
+    expect(await store.isRevoked({ appId: baseApp.id, token: rt })).toBe(true);
   });
 
   it('returns 200 when app is unknown (token sealed for another app)', async () => {
@@ -193,7 +193,7 @@ describe('POST /oidc/revoke', () => {
       body: `token=${encodeURIComponent(at)}&token_type_hint=access_token`,
     });
     expect(res.status).toBe(200);
-    expect(store.isRevoked({ appId: otherApp.id, token: at })).toBe(false);
+    expect(await store.isRevoked({ appId: otherApp.id, token: at })).toBe(false);
   });
 
   it('returns 200 for tampered ait_ token (does not throw)', async () => {
@@ -206,7 +206,7 @@ describe('POST /oidc/revoke', () => {
       body: `token=${encodeURIComponent(tampered)}&token_type_hint=access_token`,
     });
     expect(res.status).toBe(200);
-    expect(store.isRevoked({ appId: baseApp.id, token: tampered })).toBe(false);
+    expect(await store.isRevoked({ appId: baseApp.id, token: tampered })).toBe(false);
   });
 });
 

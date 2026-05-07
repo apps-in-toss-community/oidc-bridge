@@ -138,7 +138,7 @@ describe('GET /oidc/userinfo error cases', () => {
   it('401 invalid_token when token is revoked', async () => {
     const store = createInMemoryRevocationStore();
     const at = makeAt(baseApp);
-    store.revoke({ appId: baseApp.id, token: at });
+    await store.revoke({ appId: baseApp.id, token: at });
     const h = buildHarness(baseApp, { revocationStore: store });
     const res = await h.request('/oidc/userinfo', {
       headers: { authorization: `Bearer ${at}` },

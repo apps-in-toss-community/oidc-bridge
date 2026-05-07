@@ -29,6 +29,18 @@ export function equals(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
+/**
+ * Constant-time byte equality. Suitable for comparing secret hashes.
+ * Returns false immediately if lengths differ (length is not secret here —
+ * all SHA-256 hashes are 32 bytes, so equal-length is guaranteed in practice).
+ */
+export function constantTimeEquals(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i]! ^ b[i]!;
+  return diff === 0;
+}
+
 export function toBase64Url(u: Uint8Array): string {
   let bin = '';
   for (let i = 0; i < u.length; i++) bin += String.fromCharCode(u[i]!);

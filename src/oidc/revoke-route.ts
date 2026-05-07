@@ -61,10 +61,12 @@ export function revokeRoute(opts: RevokeRouteOpts) {
 
     let payload: SealedPayload;
     try {
-      const sealingKeyU8 = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
-      // resolveKey in sealed-token.ts still returns Buffer (Task 9 will widen it).
-      const sealingKey = Buffer.from(sealingKeyU8);
-      payload = unwrapSealedToken({ token, resolveKey: () => sealingKey, expectedAppId: appId });
+      const sealingKey = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
+      payload = await unwrapSealedToken({
+        token,
+        resolveKey: () => sealingKey,
+        expectedAppId: appId,
+      });
     } catch {
       return c.body(null, 200);
     }

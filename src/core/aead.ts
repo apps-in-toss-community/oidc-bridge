@@ -68,7 +68,8 @@ function toArrayBuffer(u: Uint8Array): ArrayBuffer {
   return plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer;
 }
 
-export const webCryptoAead: Aead = {
+/** Default Aead implementation: WebCrypto AES-256-GCM (portable — Node 18+ and Workers). */
+export const aead: Aead = {
   async seal({ key, iv, aad, plaintext }) {
     const cryptoKey = await importKey(key);
     // WebCrypto returns ciphertext || tag (tag appended as last 16 bytes)
@@ -113,3 +114,6 @@ export const webCryptoAead: Aead = {
     return new Uint8Array(decrypted);
   },
 };
+
+/** Alias kept for backward compatibility with code that imported `webCryptoAead`. */
+export const webCryptoAead: Aead = aead;

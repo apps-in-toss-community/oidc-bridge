@@ -82,12 +82,10 @@ async function finalize(
 ): Promise<TokenResponse> {
   const now = deps.now();
   const tossAtExp = now + ts.expiresIn;
-  const sealingKeyU8 = await deps.resolveAppSealingKey({
+  const sealingKey = await deps.resolveAppSealingKey({
     appId: app.id,
     sealingKeyVersion: app.sealingKeyVersion,
   });
-  // wrapSealedToken still takes Buffer (Task 9 will widen it); wrap at call site.
-  const sealingKey = Buffer.from(sealingKeyU8);
   const sealCommon = {
     sealingKey,
     sealingKeyVersion: app.sealingKeyVersion,
@@ -100,8 +98,8 @@ async function finalize(
       issuedAt: now,
     },
   };
-  const accessToken = wrapSealedToken(sealCommon);
-  const refreshToken = wrapSealedToken(sealCommon);
+  const accessToken = await wrapSealedToken(sealCommon);
+  const refreshToken = await wrapSealedToken(sealCommon);
   const idToken = await mintIdToken({
     issuer: deps.issuer,
     ttlSeconds: deps.idTokenTtlSeconds,

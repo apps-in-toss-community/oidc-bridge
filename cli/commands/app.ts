@@ -55,19 +55,13 @@ export function appCommand(): Command {
           if (c.mode === 'offline') {
             const provider = createMasterKeyProvider();
             const version = Number(opts.masterKeyVersion);
-            const masterKeyU8 = await provider.getKeyBytes(version);
-            // apps/service.ts expects Buffer for masterKey until Task 9 widens it; wrap at call site.
-            const masterKey = Buffer.from(
-              masterKeyU8.buffer,
-              masterKeyU8.byteOffset,
-              masterKeyU8.byteLength,
-            );
+            const masterKey = await provider.getKeyBytes(version);
             const r = await c.service.apps.create(c.ctx, {
               workspaceId: opts.workspaceId,
               appIdToss: opts.appIdToss,
               displayTitle: opts.title,
-              mtlsCert: Buffer.from(certPem, 'utf8'),
-              mtlsKey: Buffer.from(keyPem, 'utf8'),
+              mtlsCert: new TextEncoder().encode(certPem),
+              mtlsKey: new TextEncoder().encode(keyPem),
               allowedOrigins: opts.allowedOrigin,
               sealingKeyVersion: version,
               masterKey,

@@ -35,7 +35,7 @@ describe('tokenService.authorizationCode', () => {
     expect(out.access_token).toMatch(/^ait_/);
     expect(out.refresh_token).toMatch(/^ait_/);
     expect(out.id_token.split('.')).toHaveLength(3);
-    const at = unwrapSealedToken({
+    const at = await unwrapSealedToken({
       token: out.access_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'app_abc',
@@ -85,7 +85,7 @@ describe('tokenService.refresh', () => {
       app: { id: 'a', clientId: 'a', sealingKeyVersion: 1 },
       authorizationCode: 'good',
     });
-    const firstUnwrapped = unwrapSealedToken({
+    const firstUnwrapped = await unwrapSealedToken({
       token: first.refresh_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'a',
@@ -94,7 +94,7 @@ describe('tokenService.refresh', () => {
       app: { id: 'a', clientId: 'a', sealingKeyVersion: 1 },
       unwrappedRt: { tossRt: firstUnwrapped.tossRt, tossUserKey: firstUnwrapped.tossUserKey },
     });
-    const secondUnwrapped = unwrapSealedToken({
+    const secondUnwrapped = await unwrapSealedToken({
       token: second.access_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'a',

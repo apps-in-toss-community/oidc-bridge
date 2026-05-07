@@ -166,19 +166,13 @@ export function mountAdminRoutes(app: Hono, opts: MountAdminRoutesOptions): void
     }
     try {
       const version = opts.activeMasterKeyVersion();
-      const masterKeyU8 = await opts.masterKeyProvider.getKeyBytes(version);
-      // apps/service.ts expects Buffer for masterKey until Task 9 widens it; wrap at call site.
-      const masterKey = Buffer.from(
-        masterKeyU8.buffer,
-        masterKeyU8.byteOffset,
-        masterKeyU8.byteLength,
-      );
+      const masterKey = await opts.masterKeyProvider.getKeyBytes(version);
       const result = await opts.service.apps.create(ctxFromHono(c), {
         workspaceId: parsed.data.workspaceId,
         appIdToss: parsed.data.appIdToss,
         displayTitle: parsed.data.displayTitle,
-        mtlsCert: Buffer.from(parsed.data.mtlsCertPem, 'utf8'),
-        mtlsKey: Buffer.from(parsed.data.mtlsKeyPem, 'utf8'),
+        mtlsCert: new TextEncoder().encode(parsed.data.mtlsCertPem),
+        mtlsKey: new TextEncoder().encode(parsed.data.mtlsKeyPem),
         allowedOrigins: parsed.data.allowedOrigins,
         sealingKeyVersion: version,
         masterKey,

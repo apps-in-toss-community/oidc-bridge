@@ -116,15 +116,13 @@ export function tokenRoute(opts: TokenRouteOpts) {
         return c.json(e.body, e.status as never);
       }
 
-      let unwrapped: ReturnType<typeof unwrapSealedToken>;
+      let unwrapped: Awaited<ReturnType<typeof unwrapSealedToken>>;
       try {
-        const sealingKeyU8 = await opts.resolveAppSealingKey({
+        const sealingKey = await opts.resolveAppSealingKey({
           appId: appRow.id,
           sealingKeyVersion: version,
         });
-        // resolveKey in sealed-token.ts still returns Buffer (Task 9 will widen it).
-        const sealingKey = Buffer.from(sealingKeyU8);
-        unwrapped = unwrapSealedToken({
+        unwrapped = await unwrapSealedToken({
           token: body.refresh_token,
           resolveKey: () => sealingKey,
           expectedAppId: appRow.id,

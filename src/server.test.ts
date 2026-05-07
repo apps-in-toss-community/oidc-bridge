@@ -49,13 +49,20 @@ describe('createMtlsMaterialAccessor', () => {
   it('round-trips: encrypts cert+key into AppRecord, decrypts to PEM strings', async () => {
     const masterKey = randomBytes(32);
     const appId = 'app_test_001';
-    const sealingKeyU8 = await deriveSealingKey({ masterKey, appId });
-    const sealingKey = Buffer.from(sealingKeyU8);
-    const aad = Buffer.from(appId, 'utf8');
+    const sealingKey = await deriveSealingKey({ masterKey, appId });
+    const aad = new TextEncoder().encode(appId);
     const certPem = '-----BEGIN CERTIFICATE-----\nABCDEF\n-----END CERTIFICATE-----\n';
     const keyPem = '-----BEGIN PRIVATE KEY-----\nGHIJKL\n-----END PRIVATE KEY-----\n';
-    const certEnc = encryptColumn({ key: sealingKey, plaintext: Buffer.from(certPem), aad });
-    const keyEnc = encryptColumn({ key: sealingKey, plaintext: Buffer.from(keyPem), aad });
+    const certEnc = await encryptColumn({
+      key: sealingKey,
+      plaintext: new TextEncoder().encode(certPem),
+      aad,
+    });
+    const keyEnc = await encryptColumn({
+      key: sealingKey,
+      plaintext: new TextEncoder().encode(keyPem),
+      aad,
+    });
 
     const fakeApp: AppRecord = {
       id: appId,

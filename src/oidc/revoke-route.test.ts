@@ -29,9 +29,9 @@ function fakeStorage(app: FakeAppRow): Storage {
   } as unknown as Storage;
 }
 
-const sealingKey = Buffer.alloc(32, 13);
+const sealingKey = new Uint8Array(32).fill(13);
 
-function makeToken(app: FakeAppRow, userKey = '42'): string {
+async function makeToken(app: FakeAppRow, userKey = '42'): Promise<string> {
   return wrapSealedToken({
     sealingKey,
     sealingKeyVersion: app.sealingKeyVersion,
@@ -110,7 +110,7 @@ describe('POST /oidc/revoke', () => {
 
   it('access_token hint also calls accessRemove (RFC 7009 §2.1 search across types)', async () => {
     const { app: h, adapter, store } = buildHarness(baseApp);
-    const at = makeToken(baseApp);
+    const at = await makeToken(baseApp);
     const res = await h.request('/oidc/revoke', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -123,7 +123,7 @@ describe('POST /oidc/revoke', () => {
 
   it('omitted hint also calls accessRemove (RFC 7009 §2.1)', async () => {
     const { app: h, adapter, store } = buildHarness(baseApp);
-    const tok = makeToken(baseApp);
+    const tok = await makeToken(baseApp);
     const res = await h.request('/oidc/revoke', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -136,7 +136,7 @@ describe('POST /oidc/revoke', () => {
 
   it('accepts JSON content-type', async () => {
     const { app: h, adapter, store } = buildHarness(baseApp);
-    const tok = makeToken(baseApp);
+    const tok = await makeToken(baseApp);
     const res = await h.request('/oidc/revoke', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -149,7 +149,7 @@ describe('POST /oidc/revoke', () => {
 
   it('refresh_token hint triggers accessRemove on Toss', async () => {
     const { app: h, adapter, store } = buildHarness(baseApp);
-    const rt = makeToken(baseApp);
+    const rt = await makeToken(baseApp);
     const res = await h.request('/oidc/revoke', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -162,7 +162,7 @@ describe('POST /oidc/revoke', () => {
 
   it('still returns 200 even if accessRemove on Toss fails', async () => {
     const { app: h, store } = buildHarness(baseApp);
-    const rt = wrapSealedToken({
+    const rt = await wrapSealedToken({
       sealingKey,
       sealingKeyVersion: baseApp.sealingKeyVersion,
       payload: {
@@ -186,7 +186,7 @@ describe('POST /oidc/revoke', () => {
   it('returns 200 when app is unknown (token sealed for another app)', async () => {
     const otherApp: FakeAppRow = { ...baseApp, id: 'app_other' };
     const { app: h, store } = buildHarness(baseApp);
-    const at = makeToken(otherApp);
+    const at = await makeToken(otherApp);
     const res = await h.request('/oidc/revoke', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -198,7 +198,7 @@ describe('POST /oidc/revoke', () => {
 
   it('returns 200 for tampered ait_ token (does not throw)', async () => {
     const { app: h, store } = buildHarness(baseApp);
-    const at = makeToken(baseApp);
+    const at = await makeToken(baseApp);
     const tampered = `${at.slice(0, -4)}AAAA`;
     const res = await h.request('/oidc/revoke', {
       method: 'POST',

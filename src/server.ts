@@ -13,6 +13,7 @@ import {
   loadRateLimitConfig,
   loadTossConfig,
 } from './config.js';
+import { fromUtf8, toUtf8 } from './core/bytes.js';
 import { createLogger } from './logger.js';
 import { createMasterKeyProvider, deriveSealingKey } from './master-keys/index.js';
 import type { MasterKeyProvider } from './master-keys/provider.js';
@@ -76,20 +77,14 @@ export function createMtlsMaterialAccessor(
     const app = await deps.storage.getApp(appId);
     if (!app) return null;
     const masterKey = await deps.getMasterKey(app.sealingKeyVersion);
-    const sealingKeyU8 = await deriveSealingKey({ masterKey, appId });
-    // encryption.ts still takes Buffer (Task 9 will widen it); wrap at call site.
-    const sealingKey = Buffer.from(sealingKeyU8);
-    const aad = Buffer.from(appId, 'utf8');
-    const certPem = decryptColumn({
-      key: sealingKey,
-      ciphertext: Buffer.from(app.mtlsCertEnc),
-      aad,
-    }).toString('utf8');
-    const keyPem = decryptColumn({
-      key: sealingKey,
-      ciphertext: Buffer.from(app.mtlsKeyEnc),
-      aad,
-    }).toString('utf8');
+    const sealingKey = await deriveSealingKey({ masterKey, appId });
+    const aad = fromUtf8(appId);
+    const certPem = toUtf8(
+      await decryptColumn({ key: sealingKey, ciphertext: app.mtlsCertEnc, aad }),
+    );
+    const keyPem = toUtf8(
+      await decryptColumn({ key: sealingKey, ciphertext: app.mtlsKeyEnc, aad }),
+    );
     return { certPem, keyPem };
   };
 }

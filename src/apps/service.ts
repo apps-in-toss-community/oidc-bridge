@@ -1,3 +1,4 @@
+import { fromUtf8 } from '../core/bytes.js';
 import { newId } from '../ids.js';
 import { deriveSealingKey } from '../master-keys/index.js';
 import type { Storage } from '../storage/interface.js';
@@ -28,11 +29,11 @@ export interface CreateAppInput {
   workspaceId: string;
   appIdToss: string;
   displayTitle: string;
-  mtlsCert: Buffer;
-  mtlsKey: Buffer;
+  mtlsCert: Uint8Array;
+  mtlsKey: Uint8Array;
   allowedOrigins: string[];
   sealingKeyVersion: number;
-  masterKey: Buffer;
+  masterKey: Uint8Array;
   stage: Stage;
 }
 
@@ -168,12 +169,10 @@ export function createService(opts: CreateServiceOptions): Service {
     async create(ctx, input) {
       await getOwnedWorkspace(ctx, input.workspaceId);
       const appId = newId('app');
-      const sealingKeyU8 = await deriveSealingKey({ masterKey: input.masterKey, appId });
-      // encryptColumn still takes Buffer (Task 9 will widen it); wrap at call site.
-      const sealingKey = Buffer.from(sealingKeyU8);
-      const aad = Buffer.from(appId, 'utf8');
-      const certEnc = encryptColumn({ key: sealingKey, plaintext: input.mtlsCert, aad });
-      const keyEnc = encryptColumn({ key: sealingKey, plaintext: input.mtlsKey, aad });
+      const sealingKey = await deriveSealingKey({ masterKey: input.masterKey, appId });
+      const aad = fromUtf8(appId);
+      const certEnc = await encryptColumn({ key: sealingKey, plaintext: input.mtlsCert, aad });
+      const keyEnc = await encryptColumn({ key: sealingKey, plaintext: input.mtlsKey, aad });
       const clientId = `client_${appId.slice('app_'.length)}`;
       const clientSecret = generateClientSecret();
       const hash = await hashClientSecret(clientSecret);

@@ -32,9 +32,13 @@ function fakeStorage(app: FakeAppRow): Storage {
   } as unknown as Storage;
 }
 
-const sealingKey = Buffer.alloc(32, 13);
+const sealingKey = new Uint8Array(32).fill(13);
 
-function makeAt(app: FakeAppRow, userKey = '42', tossAt = 'TOSS_AT_OPAQUE_FIXTURE'): string {
+async function makeAt(
+  app: FakeAppRow,
+  userKey = '42',
+  tossAt = 'TOSS_AT_OPAQUE_FIXTURE',
+): Promise<string> {
   return wrapSealedToken({
     sealingKey,
     sealingKeyVersion: app.sealingKeyVersion,
@@ -75,7 +79,7 @@ const baseApp: FakeAppRow = {
 describe('GET /oidc/userinfo', () => {
   it('returns mapped claims for a valid AT', async () => {
     const h = buildHarness(baseApp);
-    const at = makeAt(baseApp);
+    const at = await makeAt(baseApp);
     const res = await h.request('/oidc/userinfo', {
       headers: { authorization: `Bearer ${at}` },
     });
@@ -117,7 +121,7 @@ describe('GET /oidc/userinfo error cases', () => {
 
   it('401 invalid_token when app unknown', async () => {
     const otherApp: FakeAppRow = { ...baseApp, id: 'app_other' };
-    const at = makeAt(otherApp);
+    const at = await makeAt(otherApp);
     const h = buildHarness(baseApp); // storage only knows baseApp
     const res = await h.request('/oidc/userinfo', {
       headers: { authorization: `Bearer ${at}` },
@@ -127,7 +131,7 @@ describe('GET /oidc/userinfo error cases', () => {
 
   it('401 invalid_token for tampered token', async () => {
     const h = buildHarness(baseApp);
-    const at = makeAt(baseApp);
+    const at = await makeAt(baseApp);
     const tampered = `${at.slice(0, -4)}AAAA`;
     const res = await h.request('/oidc/userinfo', {
       headers: { authorization: `Bearer ${tampered}` },
@@ -137,7 +141,7 @@ describe('GET /oidc/userinfo error cases', () => {
 
   it('401 invalid_token when token is revoked', async () => {
     const store = createInMemoryRevocationStore();
-    const at = makeAt(baseApp);
+    const at = await makeAt(baseApp);
     await store.revoke({ appId: baseApp.id, token: at });
     const h = buildHarness(baseApp, { revocationStore: store });
     const res = await h.request('/oidc/userinfo', {
@@ -151,7 +155,7 @@ describe('GET /oidc/userinfo error cases', () => {
 
   it('502 upstream_error when Toss login-me fails', async () => {
     const h = buildHarness(baseApp);
-    const at = makeAt(baseApp, '42', 'fail-at');
+    const at = await makeAt(baseApp, '42', 'fail-at');
     const res = await h.request('/oidc/userinfo', {
       headers: { authorization: `Bearer ${at}` },
     });
@@ -183,7 +187,7 @@ describe('createApp wiring (userinfo)', () => {
         now: () => 1735686000,
       },
     });
-    const at = makeAt(baseApp);
+    const at = await makeAt(baseApp);
     const res = await app.request('/oidc/userinfo', {
       headers: { authorization: `Bearer ${at}` },
     });

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { createNodeMtlsFactory } from '../../src/runtime/node-mtls.js';
 import { RealTossAdapter } from '../../src/toss/real-adapter.js';
 
 const LIVE = process.env.TOSS_LIVE_TEST === '1';
@@ -16,10 +17,11 @@ describe.runIf(LIVE)('RealTossAdapter (live, sandbox)', () => {
     }
     const certPem = readFileSync(certPath, 'utf8');
     const keyPem = readFileSync(keyPath, 'utf8');
-    const adapter = new RealTossAdapter({
+    const mtlsFactory = createNodeMtlsFactory({
       apiBase,
       getMtlsMaterial: async () => ({ certPem, keyPem }),
     });
+    const adapter = new RealTossAdapter({ apiBase, mtlsFactory });
     const ts = await adapter.generateToken({ appId: 'live' }, { authorizationCode: authCode });
     expect(ts.accessToken.length).toBeGreaterThan(20);
     expect(ts.refreshToken.length).toBeGreaterThan(20);

@@ -57,7 +57,7 @@ function parseBasic(authorization: string | undefined): ParsedBasic | null {
   }
   let decoded: string;
   try {
-    decoded = Buffer.from(b64, 'base64').toString('utf8');
+    decoded = atob(b64);
   } catch {
     return { malformed: true, clientId: '', secret: '' };
   }

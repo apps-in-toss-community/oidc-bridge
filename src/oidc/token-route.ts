@@ -12,7 +12,10 @@ import type { TokenService } from './token-service.js';
 export interface TokenRouteOpts {
   storage: Storage;
   tokenService: TokenService;
-  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+  resolveAppSealingKey: (input: {
+    appId: string;
+    sealingKeyVersion: number;
+  }) => Promise<Uint8Array>;
 }
 
 export function tokenRoute(opts: TokenRouteOpts) {
@@ -113,13 +116,13 @@ export function tokenRoute(opts: TokenRouteOpts) {
         return c.json(e.body, e.status as never);
       }
 
-      let unwrapped: ReturnType<typeof unwrapSealedToken>;
+      let unwrapped: Awaited<ReturnType<typeof unwrapSealedToken>>;
       try {
         const sealingKey = await opts.resolveAppSealingKey({
           appId: appRow.id,
           sealingKeyVersion: version,
         });
-        unwrapped = unwrapSealedToken({
+        unwrapped = await unwrapSealedToken({
           token: body.refresh_token,
           resolveKey: () => sealingKey,
           expectedAppId: appRow.id,

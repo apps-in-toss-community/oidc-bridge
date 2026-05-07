@@ -1,3 +1,4 @@
+import { createNodeMtlsFactory } from '../../../src/runtime/node-mtls.js';
 import { TossUpstreamError } from '../../../src/toss/adapter.js';
 import { RealTossAdapter } from '../../../src/toss/real-adapter.js';
 import type { ProbeItem } from '../../output.js';
@@ -13,7 +14,6 @@ export interface TossProbeOpts {
    */
   accessToken?: string;
   fetchImpl?: typeof fetch;
-  buildDispatcher?: (opts: { certPem: string; keyPem: string }) => unknown;
 }
 
 const PLACEHOLDER_AT = 'doctor_probe_placeholder_at';
@@ -28,11 +28,14 @@ export async function runTossProbe(opts: TossProbeOpts): Promise<ProbeItem> {
   }
   const certPem = opts.certPem;
   const keyPem = opts.keyPem;
-  const adapter = new RealTossAdapter({
+  const mtlsFactory = createNodeMtlsFactory({
     apiBase: opts.apiBase,
     getMtlsMaterial: async () => ({ certPem, keyPem }),
     ...(opts.fetchImpl !== undefined ? { fetchImpl: opts.fetchImpl } : {}),
-    ...(opts.buildDispatcher !== undefined ? { buildDispatcher: opts.buildDispatcher } : {}),
+  });
+  const adapter = new RealTossAdapter({
+    apiBase: opts.apiBase,
+    mtlsFactory,
   });
   try {
     await adapter.loginMe({ appId: 'doctor' }, { accessToken: opts.accessToken ?? PLACEHOLDER_AT });

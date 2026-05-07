@@ -3,7 +3,7 @@ import { deriveSealingKey, type MasterKeyProvider } from '../master-keys/index.j
 export type AppSealingKeyResolver = (input: {
   appId: string;
   sealingKeyVersion: number;
-}) => Promise<Buffer>;
+}) => Promise<Uint8Array>;
 
 export function createAppSealingKeyResolver(opts: {
   provider: MasterKeyProvider;

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createNodeMtlsFactory } from '../src/runtime/node-mtls.js';
 import { RealTossAdapter } from '../src/toss/real-adapter.js';
 
 function requireEnv(name: string): string {
@@ -51,10 +52,11 @@ async function main() {
   const fixturesDir = resolve(process.cwd(), 'src/toss/fixtures');
   mkdirSync(fixturesDir, { recursive: true });
 
-  const adapter = new RealTossAdapter({
+  const mtlsFactory = createNodeMtlsFactory({
     apiBase,
     getMtlsMaterial: async () => ({ certPem, keyPem }),
   });
+  const adapter = new RealTossAdapter({ apiBase, mtlsFactory });
 
   const ts = await adapter.generateToken({ appId: 'spike' }, { authorizationCode: authCode });
   writeFixture('generate-token-success.real.json', {

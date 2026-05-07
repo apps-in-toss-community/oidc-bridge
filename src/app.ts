@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import type pino from 'pino';
 import type { ProbeItem } from '../cli/output.js';
 import { mountSessionRoute } from './admin/session-route.js';
 import { type MountAdminRoutesOptions, mountAdminRoutes } from './apps/routes.js';
 import type { OidcConfig } from './config.js';
+import type { Logger } from './core/logger.js';
 import { pinoHttp } from './middleware/pino-http.js';
 import { rateLimit } from './middleware/rate-limit-route.js';
 import { requestId } from './middleware/request-id.js';
@@ -23,7 +23,7 @@ import type { Storage } from './storage/interface.js';
 import type { TossAdapter } from './toss/adapter.js';
 
 export interface ObservabilityOptions {
-  logger: pino.Logger;
+  logger: Logger;
   ipHashSalt: string;
 }
 
@@ -46,7 +46,10 @@ export interface CreateAppOptions {
     signingKeyRegistry: SigningKeyRegistry;
     storage: Storage;
     tossAdapter: TossAdapter;
-    resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+    resolveAppSealingKey: (input: {
+      appId: string;
+      sealingKeyVersion: number;
+    }) => Promise<Uint8Array>;
     revocationStore: RevocationStore;
     now?: () => number;
   };

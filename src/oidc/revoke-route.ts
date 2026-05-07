@@ -14,7 +14,10 @@ import {
 export interface RevokeRouteOpts {
   storage: Storage;
   tossAdapter: TossAdapter;
-  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+  resolveAppSealingKey: (input: {
+    appId: string;
+    sealingKeyVersion: number;
+  }) => Promise<Uint8Array>;
   revocationStore: RevocationStore;
 }
 
@@ -59,12 +62,16 @@ export function revokeRoute(opts: RevokeRouteOpts) {
     let payload: SealedPayload;
     try {
       const sealingKey = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
-      payload = unwrapSealedToken({ token, resolveKey: () => sealingKey, expectedAppId: appId });
+      payload = await unwrapSealedToken({
+        token,
+        resolveKey: () => sealingKey,
+        expectedAppId: appId,
+      });
     } catch {
       return c.body(null, 200);
     }
 
-    opts.revocationStore.revoke({ appId, token });
+    await opts.revocationStore.revoke({ appId, token });
 
     // RFC 7009 §2.1: when the hint mismatches the actual token type, the
     // server is RECOMMENDED to search across all supported types. The sealed

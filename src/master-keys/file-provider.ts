@@ -18,7 +18,7 @@ export function createFileMasterKeyProvider(opts: FileProviderOptions): MasterKe
   }
 
   return {
-    async getKeyBytes(version: number): Promise<Buffer> {
+    async getKeyBytes(version: number): Promise<Uint8Array> {
       const path = pathFor(version);
       let stat: ReturnType<typeof statSync>;
       try {
@@ -32,13 +32,14 @@ export function createFileMasterKeyProvider(opts: FileProviderOptions): MasterKe
           `MasterKeyProvider(file): ${path} permissions are too open (${(stat.mode & 0o777).toString(8)}); chmod 600 recommended`,
         );
       }
-      const bytes = readFileSync(path);
-      if (bytes.length < 32) {
+      const buf = readFileSync(path);
+      if (buf.length < 32) {
         throw new Error(
-          `MasterKeyProvider(file): ${path} must be at least 32 bytes (got ${bytes.length})`,
+          `MasterKeyProvider(file): ${path} must be at least 32 bytes (got ${buf.length})`,
         );
       }
-      return bytes;
+      // zero-copy Uint8Array view over the Buffer's underlying ArrayBuffer
+      return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     },
     async listVersions(): Promise<number[]> {
       let entries: string[];

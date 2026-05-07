@@ -1,4 +1,7 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { type Aead, aead as defaultAead } from '../core/aead.js';
+import { concat, fromBase64Url, fromUtf8, toBase64Url, toUtf8 } from '../core/bytes.js';
+import type { Random } from '../core/random.js';
+import { nodeRandom } from '../runtime/node-random.js';
 
 export interface SealedPayload {
   appId: string;
@@ -10,9 +13,11 @@ export interface SealedPayload {
 }
 
 export interface WrapInput {
-  sealingKey: Buffer;
+  sealingKey: Uint8Array;
   sealingKeyVersion: number;
   payload: SealedPayload;
+  random?: Random;
+  aead?: Aead;
 }
 
 const VERSION_BYTES = 1;
@@ -21,52 +26,55 @@ const USERKEY_LEN_BYTES = 1;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
-export function wrapSealedToken(input: WrapInput): string {
+export async function wrapSealedToken(input: WrapInput): Promise<string> {
   if (input.sealingKey.length !== 32) throw new Error('sealingKey must be 32 bytes');
   if (input.sealingKeyVersion < 1 || input.sealingKeyVersion > 255) {
     throw new Error('sealingKeyVersion must fit in 1 byte');
   }
-  const appIdBuf = Buffer.from(input.payload.appId, 'utf8');
-  if (appIdBuf.length === 0 || appIdBuf.length > 255) {
+  const appIdBytes = fromUtf8(input.payload.appId);
+  if (appIdBytes.length === 0 || appIdBytes.length > 255) {
     throw new Error('appId length out of range');
   }
-  const userKeyBuf = Buffer.from(input.payload.tossUserKey, 'utf8');
-  if (userKeyBuf.length === 0 || userKeyBuf.length > 255) {
+  const userKeyBytes = fromUtf8(input.payload.tossUserKey);
+  if (userKeyBytes.length === 0 || userKeyBytes.length > 255) {
     throw new Error('tossUserKey length out of range');
   }
-  const iv = randomBytes(IV_BYTES);
+  const random = input.random ?? nodeRandom;
+  const aeadImpl = input.aead ?? defaultAead;
+  const iv = random.bytes(IV_BYTES);
   const aad = buildAad(input.payload.appId, input.payload.tossUserKey, input.sealingKeyVersion);
-  const cipher = createCipheriv('aes-256-gcm', input.sealingKey, iv);
-  cipher.setAAD(aad);
-  const ciphertext = Buffer.concat([
-    cipher.update(Buffer.from(JSON.stringify(input.payload), 'utf8')),
-    cipher.final(),
-  ]);
-  const tag = cipher.getAuthTag();
+  const plaintext = fromUtf8(JSON.stringify(input.payload));
+  const { ciphertext, tag } = await aeadImpl.seal({
+    key: input.sealingKey,
+    iv,
+    aad,
+    plaintext,
+  });
   if (tag.length !== TAG_BYTES) throw new Error('GCM tag length unexpected');
-  const sealed = Buffer.concat([
-    Buffer.from([input.sealingKeyVersion]),
-    Buffer.from([appIdBuf.length]),
-    appIdBuf,
-    Buffer.from([userKeyBuf.length]),
-    userKeyBuf,
+  const sealed = concat(
+    new Uint8Array([input.sealingKeyVersion]),
+    new Uint8Array([appIdBytes.length]),
+    appIdBytes,
+    new Uint8Array([userKeyBytes.length]),
+    userKeyBytes,
     iv,
     ciphertext,
     tag,
-  ]);
-  return `ait_${sealed.toString('base64url')}`;
+  );
+  return `ait_${toBase64Url(sealed)}`;
 }
 
 export interface UnwrapInput {
   token: string;
-  resolveKey: (sealingKeyVersion: number) => Buffer;
+  resolveKey: (sealingKeyVersion: number) => Uint8Array;
   expectedAppId: string;
+  aead?: Aead;
 }
 
-export function unwrapSealedToken(input: UnwrapInput): SealedPayload {
+export async function unwrapSealedToken(input: UnwrapInput): Promise<SealedPayload> {
   const parts = parseSealed(input.token);
   if (parts.appId !== input.expectedAppId) throw new Error('SEALED_TOKEN_TAMPERED');
-  return decryptOrThrow(parts, input.resolveKey, input.expectedAppId);
+  return decryptOrThrow(parts, input.resolveKey, input.expectedAppId, input.aead ?? defaultAead);
 }
 
 export function peekSealedTokenVersion(token: string): number {
@@ -85,16 +93,16 @@ interface ParsedSealed {
   version: number;
   appId: string;
   userKey: string;
-  iv: Buffer;
-  ciphertext: Buffer;
-  tag: Buffer;
+  iv: Uint8Array;
+  ciphertext: Uint8Array;
+  tag: Uint8Array;
 }
 
 function parseSealed(token: string): ParsedSealed {
   if (!token.startsWith('ait_')) throw new Error('SEALED_TOKEN_BAD_FORMAT');
-  let buf: Buffer;
+  let buf: Uint8Array;
   try {
-    buf = Buffer.from(token.slice(4), 'base64url');
+    buf = fromBase64Url(token.slice(4));
   } catch {
     throw new Error('SEALED_TOKEN_BAD_FORMAT');
   }
@@ -106,13 +114,13 @@ function parseSealed(token: string): ParsedSealed {
   const appIdLen = buf[off]!;
   off += APPID_LEN_BYTES;
   if (buf.length < off + appIdLen) throw new Error('SEALED_TOKEN_BAD_FORMAT');
-  const appId = buf.subarray(off, off + appIdLen).toString('utf8');
+  const appId = toUtf8(buf.subarray(off, off + appIdLen));
   off += appIdLen;
   if (buf.length < off + USERKEY_LEN_BYTES) throw new Error('SEALED_TOKEN_BAD_FORMAT');
   const userKeyLen = buf[off]!;
   off += USERKEY_LEN_BYTES;
   if (buf.length < off + userKeyLen) throw new Error('SEALED_TOKEN_BAD_FORMAT');
-  const userKey = buf.subarray(off, off + userKeyLen).toString('utf8');
+  const userKey = toUtf8(buf.subarray(off, off + userKeyLen));
   off += userKeyLen;
   if (buf.length < off + IV_BYTES + TAG_BYTES + 1) throw new Error('SEALED_TOKEN_BAD_FORMAT');
   const iv = buf.subarray(off, off + IV_BYTES);
@@ -122,30 +130,34 @@ function parseSealed(token: string): ParsedSealed {
   return { version, appId, userKey, iv, ciphertext, tag };
 }
 
-function decryptOrThrow(
+async function decryptOrThrow(
   parts: ParsedSealed,
-  resolveKey: (v: number) => Buffer,
+  resolveKey: (v: number) => Uint8Array,
   expectedAppId: string,
-): SealedPayload {
+  aeadImpl: Aead,
+): Promise<SealedPayload> {
   const key = resolveKey(parts.version);
   if (key.length !== 32) throw new Error('SEALED_TOKEN_BAD_KEY');
   const aad = buildAad(expectedAppId, parts.userKey, parts.version);
-  const decipher = createDecipheriv('aes-256-gcm', key, parts.iv);
-  decipher.setAAD(aad);
-  decipher.setAuthTag(parts.tag);
-  let plaintext: Buffer;
+  let plaintext: Uint8Array;
   try {
-    plaintext = Buffer.concat([decipher.update(parts.ciphertext), decipher.final()]);
+    plaintext = await aeadImpl.open({
+      key,
+      iv: parts.iv,
+      aad,
+      ciphertext: parts.ciphertext,
+      tag: parts.tag,
+    });
   } catch {
     throw new Error('SEALED_TOKEN_TAMPERED');
   }
-  const parsed = JSON.parse(plaintext.toString('utf8')) as SealedPayload;
+  const parsed = JSON.parse(toUtf8(plaintext)) as SealedPayload;
   if (parsed.appId !== expectedAppId || parsed.tossUserKey !== parts.userKey) {
     throw new Error('SEALED_TOKEN_TAMPERED');
   }
   return parsed;
 }
 
-export function buildAad(appId: string, tossUserKey: string, version: number): Buffer {
-  return Buffer.from(`${appId} ${tossUserKey} ${version}`, 'utf8');
+export function buildAad(appId: string, tossUserKey: string, version: number): Uint8Array {
+  return fromUtf8(`${appId} ${tossUserKey} ${version}`);
 }

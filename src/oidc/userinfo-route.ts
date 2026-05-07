@@ -10,7 +10,10 @@ import { peekSealedTokenAppId, peekSealedTokenVersion, unwrapSealedToken } from 
 export interface UserinfoRouteOpts {
   storage: Storage;
   tossAdapter: TossAdapter;
-  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+  resolveAppSealingKey: (input: {
+    appId: string;
+    sealingKeyVersion: number;
+  }) => Promise<Uint8Array>;
   revocationStore: RevocationStore;
 }
 
@@ -38,14 +41,18 @@ export function userinfoRoute(opts: UserinfoRouteOpts) {
     const appRow = await opts.storage.getApp(appId);
     if (!appRow) return bearerError(c, 'unknown app');
 
-    if (opts.revocationStore.isRevoked({ appId, token })) {
+    if (await opts.revocationStore.isRevoked({ appId, token })) {
       return bearerError(c, 'token revoked');
     }
 
     let payload: SealedPayload;
     try {
       const sealingKey = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
-      payload = unwrapSealedToken({ token, resolveKey: () => sealingKey, expectedAppId: appId });
+      payload = await unwrapSealedToken({
+        token,
+        resolveKey: () => sealingKey,
+        expectedAppId: appId,
+      });
     } catch {
       return bearerError(c, 'token rejected');
     }

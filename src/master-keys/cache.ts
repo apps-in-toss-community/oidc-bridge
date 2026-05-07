@@ -10,7 +10,7 @@ export interface TtlCacheOptions {
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
 interface Entry {
-  bytes: Buffer;
+  bytes: Uint8Array;
   expiresAt: number;
 }
 
@@ -23,7 +23,7 @@ export function withTtlCache(
   const cache = new Map<number, Entry>();
 
   return {
-    async getKeyBytes(version: number): Promise<Buffer> {
+    async getKeyBytes(version: number): Promise<Uint8Array> {
       const t = now();
       const entry = cache.get(version);
       if (entry && entry.expiresAt > t) {

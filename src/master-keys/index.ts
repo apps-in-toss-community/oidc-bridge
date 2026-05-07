@@ -3,6 +3,7 @@ import { createEnvMasterKeyProvider } from './env-provider.js';
 import { createFileMasterKeyProvider } from './file-provider.js';
 import type { MasterKeyProvider } from './provider.js';
 
+export { createWorkersMasterKeyProvider } from '../runtime/workers-master-key-provider.js';
 export { deriveSealingKey } from './hkdf.js';
 export type { MasterKeyProvider } from './provider.js';
 

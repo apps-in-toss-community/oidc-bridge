@@ -42,17 +42,17 @@ describe('api token', () => {
     expect(t.length).toBeGreaterThan(40);
   });
 
-  it('hashes deterministically (sha256)', () => {
+  it('hashes deterministically (sha256)', async () => {
     const t = 'tok_xxx';
-    expect(hashApiToken(t)).toBe(hashApiToken(t));
-    expect(hashApiToken(t)).not.toBe(hashApiToken('tok_yyy'));
-    expect(hashApiToken(t)).toMatch(/^[0-9a-f]{64}$/);
+    expect(await hashApiToken(t)).toBe(await hashApiToken(t));
+    expect(await hashApiToken(t)).not.toBe(await hashApiToken('tok_yyy'));
+    expect(await hashApiToken(t)).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('verifyApiToken matches generated tokens', () => {
+  it('verifyApiToken matches generated tokens', async () => {
     const t = generateApiToken();
-    const h = hashApiToken(t);
-    expect(verifyApiToken(t, h)).toBe(true);
-    expect(verifyApiToken('tok_zzz', h)).toBe(false);
+    const h = await hashApiToken(t);
+    expect(await verifyApiToken(t, h)).toBe(true);
+    expect(await verifyApiToken('tok_zzz', h)).toBe(false);
   });
 });

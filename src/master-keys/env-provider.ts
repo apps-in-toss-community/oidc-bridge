@@ -1,3 +1,4 @@
+import { fromHex } from '../core/bytes.js';
 import type { MasterKeyProvider } from './provider.js';
 
 export interface EnvProviderOptions {
@@ -16,13 +17,13 @@ export function createEnvMasterKeyProvider(opts: EnvProviderOptions = {}): Maste
   }
 
   return {
-    async getKeyBytes(version: number): Promise<Buffer> {
+    async getKeyBytes(version: number): Promise<Uint8Array> {
       const hex = readHex(version);
       if (!hex) throw new Error(`MasterKeyProvider(env): version ${version} not present`);
       if (!HEX_RE.test(hex)) {
         throw new Error(`MasterKeyProvider(env): version ${version} is not valid hex`);
       }
-      const bytes = Buffer.from(hex, 'hex');
+      const bytes = fromHex(hex);
       if (bytes.length < 32) {
         throw new Error(
           `MasterKeyProvider(env): version ${version} must be at least 32 bytes (got ${bytes.length})`,

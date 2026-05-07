@@ -34,7 +34,10 @@ export interface TokenServiceDeps {
   registry: SigningKeyRegistry;
   issuer: string;
   idTokenTtlSeconds: number;
-  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+  resolveAppSealingKey: (input: {
+    appId: string;
+    sealingKeyVersion: number;
+  }) => Promise<Uint8Array>;
   now: () => number;
 }
 
@@ -95,8 +98,8 @@ async function finalize(
       issuedAt: now,
     },
   };
-  const accessToken = wrapSealedToken(sealCommon);
-  const refreshToken = wrapSealedToken(sealCommon);
+  const accessToken = await wrapSealedToken(sealCommon);
+  const refreshToken = await wrapSealedToken(sealCommon);
   const idToken = await mintIdToken({
     issuer: deps.issuer,
     ttlSeconds: deps.idTokenTtlSeconds,

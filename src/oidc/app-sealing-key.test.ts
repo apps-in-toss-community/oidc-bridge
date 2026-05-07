@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { equals } from '../core/bytes.js';
 import { deriveSealingKey } from '../master-keys/index.js';
 import { createAppSealingKeyResolver } from './app-sealing-key.js';
 
@@ -17,9 +18,9 @@ describe('createAppSealingKeyResolver', () => {
       },
     };
     const resolver = createAppSealingKeyResolver({ provider });
-    const expected = deriveSealingKey({ masterKey: masterV1, appId: 'app_x' });
+    const expected = await deriveSealingKey({ masterKey: masterV1, appId: 'app_x' });
     const got = await resolver({ appId: 'app_x', sealingKeyVersion: 1 });
-    expect(got.equals(expected)).toBe(true);
+    expect(equals(got, expected)).toBe(true);
   });
 
   it('throws when provider does not have the version', async () => {

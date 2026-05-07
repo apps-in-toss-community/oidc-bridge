@@ -30,9 +30,9 @@ function fakeStorage(app: FakeAppRow): Storage {
   } as unknown as Storage;
 }
 
-const sealingKey = Buffer.alloc(32, 13);
+const sealingKey = new Uint8Array(32).fill(13);
 
-function makeAt(app: FakeAppRow): string {
+async function makeAt(app: FakeAppRow): Promise<string> {
   return wrapSealedToken({
     sealingKey,
     sealingKeyVersion: app.sealingKeyVersion,
@@ -72,7 +72,7 @@ const enabledApp: FakeAppRow = { ...disabledApp, rawTokensEnabled: true };
 describe('GET /oidc/raw-tokens', () => {
   it('returns 404 when rawTokensEnabled is false', async () => {
     const h = buildHarness(disabledApp);
-    const at = makeAt(disabledApp);
+    const at = await makeAt(disabledApp);
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
     });
@@ -81,7 +81,7 @@ describe('GET /oidc/raw-tokens', () => {
 
   it('returns access_token and expires_in when enabled', async () => {
     const h = buildHarness(enabledApp);
-    const at = makeAt(enabledApp);
+    const at = await makeAt(enabledApp);
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
     });
@@ -93,7 +93,7 @@ describe('GET /oidc/raw-tokens', () => {
 
   it('never returns refresh_token (no field, no leaked value)', async () => {
     const h = buildHarness(enabledApp);
-    const at = makeAt(enabledApp);
+    const at = await makeAt(enabledApp);
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
     });
@@ -109,9 +109,9 @@ describe('GET /oidc/raw-tokens', () => {
   });
 
   it('returns 401 when token revoked', async () => {
-    const at = makeAt(enabledApp);
+    const at = await makeAt(enabledApp);
     const store = createInMemoryRevocationStore();
-    store.revoke({ appId: enabledApp.id, token: at });
+    await store.revoke({ appId: enabledApp.id, token: at });
     const h = buildHarness(enabledApp, { store });
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
@@ -121,7 +121,7 @@ describe('GET /oidc/raw-tokens', () => {
 
   it('returns expires_in clamped to 0 when AT already expired', async () => {
     const h = buildHarness(enabledApp, { now: () => 9999999999 });
-    const at = makeAt(enabledApp);
+    const at = await makeAt(enabledApp);
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
     });
@@ -140,7 +140,7 @@ describe('GET /oidc/raw-tokens', () => {
 
   it('returns 401 when app unknown', async () => {
     const otherApp: FakeAppRow = { ...enabledApp, id: 'app_other' };
-    const at = makeAt(otherApp);
+    const at = await makeAt(otherApp);
     const h = buildHarness(enabledApp);
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
@@ -155,7 +155,7 @@ describe('GET /oidc/raw-tokens', () => {
     // *known* app does not change the response when the *requested* app
     // is unknown.
     const otherApp: FakeAppRow = { ...enabledApp, id: 'app_unknown' };
-    const at = makeAt(otherApp);
+    const at = await makeAt(otherApp);
     const h = buildHarness(disabledApp);
     const res = await h.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
@@ -187,7 +187,7 @@ describe('createApp wiring (raw-tokens)', () => {
         now: () => 1735686100,
       },
     });
-    const at = makeAt(enabledApp);
+    const at = await makeAt(enabledApp);
     const res = await app.request('/oidc/raw-tokens', {
       headers: { authorization: `Bearer ${at}` },
     });

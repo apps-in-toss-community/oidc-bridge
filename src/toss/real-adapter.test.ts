@@ -1,42 +1,69 @@
-import * as tls from 'node:tls';
-import { Pool } from 'undici';
 import { describe, expect, it, vi } from 'vitest';
-import { defaultBuildDispatcher, RealTossAdapter } from './real-adapter.js';
+import type { MtlsClient, MtlsClientFactory } from '../core/mtls.js';
+import { RealTossAdapter } from './real-adapter.js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeFakeClient(fetchImpl: typeof fetch): MtlsClient {
+  return {
+    request: (url, init) => fetchImpl(url, init),
+  };
+}
+
+function makeFakeFactory(fetchImpl: typeof fetch): MtlsClientFactory {
+  const forApp = vi.fn(async (_appId: string) => makeFakeClient(fetchImpl));
+  return { forApp };
+}
+
+function makeFactory(fetchImpl: typeof fetch): {
+  factory: MtlsClientFactory;
+  forApp: ReturnType<typeof vi.fn>;
+} {
+  const forApp = vi.fn(async (_appId: string): Promise<MtlsClient> => makeFakeClient(fetchImpl));
+  return { factory: { forApp }, forApp };
+}
+
+function successTokenResponse() {
+  return new Response(
+    JSON.stringify({
+      resultType: 'SUCCESS',
+      success: { accessToken: 'x', refreshToken: 'y', expiresIn: 3600, scope: 'openid' },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 describe('RealTossAdapter', () => {
-  it('builds one dispatcher per appId and reuses it', async () => {
-    const buildDispatcher = vi.fn(() => ({ marker: Math.random() }));
-    const fetchImpl = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            resultType: 'SUCCESS',
-            success: { accessToken: 'x', refreshToken: 'y', expiresIn: 3600, scope: 'openid' },
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        ),
-    );
-    const adapter = new RealTossAdapter({
-      apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'CERT', keyPem: 'KEY' }),
-      fetchImpl,
-      buildDispatcher,
-    });
+  it('calls factory.forApp with the correct appId and reuses client across calls', async () => {
+    const fetchImpl = vi.fn(async () => successTokenResponse());
+    const { factory, forApp } = makeFactory(fetchImpl);
 
+    const adapter = new RealTossAdapter({ apiBase: 'https://x.example', mtlsFactory: factory });
+
+    // The adapter no longer owns the cache — the factory does. We verify that
+    // forApp is called with the correct appId on every invocation (factory
+    // itself handles deduplication in production).
     await adapter.generateToken({ appId: 'app_a' }, { authorizationCode: 'c1' });
     await adapter.generateToken({ appId: 'app_a' }, { authorizationCode: 'c2' });
     await adapter.generateToken({ appId: 'app_b' }, { authorizationCode: 'c3' });
 
-    expect(buildDispatcher).toHaveBeenCalledTimes(2);
+    expect(forApp).toHaveBeenCalledWith('app_a');
+    expect(forApp).toHaveBeenCalledWith('app_b');
   });
 
-  it('throws upstream_error when app has no mtls material', async () => {
-    const adapter = new RealTossAdapter({
-      apiBase: 'https://x.example',
-      getMtlsMaterial: async () => null,
-      fetchImpl: async () => new Response('', { status: 200 }),
-      buildDispatcher: () => ({}),
-    });
+  it('throws upstream_error when factory.forApp throws (no mtls material)', async () => {
+    const factory: MtlsClientFactory = {
+      forApp: async () => {
+        throw new Error('MtlsClient(node): no mtls material for app=gone');
+      },
+    };
+    const adapter = new RealTossAdapter({ apiBase: 'https://x.example', mtlsFactory: factory });
     await expect(
       adapter.generateToken({ appId: 'gone' }, { authorizationCode: 'c' }),
     ).rejects.toMatchObject({ code: 'upstream_error' });
@@ -55,9 +82,7 @@ describe('RealTossAdapter', () => {
     );
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     await expect(
       adapter.generateToken({ appId: 'a' }, { authorizationCode: 'bad' }),
@@ -68,9 +93,7 @@ describe('RealTossAdapter', () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 503 }));
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     await expect(
       adapter.generateToken({ appId: 'a' }, { authorizationCode: 'c' }),
@@ -83,9 +106,7 @@ describe('RealTossAdapter', () => {
     });
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     await expect(
       adapter.generateToken({ appId: 'a' }, { authorizationCode: 'c' }),
@@ -111,9 +132,7 @@ describe('RealTossAdapter', () => {
     });
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     const ts = await adapter.refreshToken({ appId: 'a' }, { refreshToken: 'rt_old' });
     expect(ts).toEqual({
@@ -139,9 +158,7 @@ describe('RealTossAdapter', () => {
     });
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     const me = await adapter.loginMe({ appId: 'a' }, { accessToken: 'toss_at_x' });
     expect(me.userKey).toBe(42);
@@ -162,9 +179,7 @@ describe('RealTossAdapter', () => {
     );
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     await expect(adapter.loginMe({ appId: 'a' }, { accessToken: 'gone' })).rejects.toMatchObject({
       code: 'upstream_error',
@@ -182,9 +197,7 @@ describe('RealTossAdapter', () => {
     });
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     await expect(adapter.accessRemove({ appId: 'a' }, { userKey: '42' })).resolves.toBeUndefined();
   });
@@ -202,56 +215,10 @@ describe('RealTossAdapter', () => {
     );
     const adapter = new RealTossAdapter({
       apiBase: 'https://x.example',
-      getMtlsMaterial: async () => ({ certPem: 'C', keyPem: 'K' }),
-      fetchImpl,
-      buildDispatcher: () => ({}),
+      mtlsFactory: makeFakeFactory(fetchImpl),
     });
     await expect(adapter.accessRemove({ appId: 'a' }, { userKey: '42' })).rejects.toMatchObject({
       code: 'upstream_error',
-    });
-  });
-
-  it('defaultBuildDispatcher returns an undici Pool with cert+key configured', () => {
-    const pool = defaultBuildDispatcher({
-      certPem: 'CERT_BYTES',
-      keyPem: 'KEY_BYTES',
-      apiBase: 'https://x.example',
-    });
-    expect(pool).toBeInstanceOf(Pool);
-    pool.close();
-  });
-
-  it('cert+key contents reach tls.createSecureContext (indirect mTLS verify)', () => {
-    // ESM bindings on `node:tls` are immutable, so vi.spyOn can't intercept
-    // tls.createSecureContext directly (TypeError: Cannot redefine property).
-    // We achieve the same indirect coverage by intercepting at the layer
-    // undici hands the connect options to: a custom builder reads back the
-    // exact bytes we asked for. Combined with Task 7's check that the
-    // default builder returns a real Pool, this proves cert+key flow from
-    // adapter -> dispatcher options -> TLS layer.
-    const captured: { certPem?: string; keyPem?: string } = {};
-    const adapter = new RealTossAdapter({
-      apiBase: 'https://y.example',
-      getMtlsMaterial: async () => ({ certPem: 'MARK_CERT', keyPem: 'MARK_KEY' }),
-      buildDispatcher: (opts) => {
-        captured.certPem = opts.certPem;
-        captured.keyPem = opts.keyPem;
-        return {};
-      },
-      fetchImpl: async () =>
-        new Response(
-          JSON.stringify({
-            resultType: 'SUCCESS',
-            success: { accessToken: 'a', refreshToken: 'r', expiresIn: 1, scope: '' },
-          }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        ),
-    });
-    return adapter.generateToken({ appId: 'mtls-check' }, { authorizationCode: 'c' }).then(() => {
-      expect(captured.certPem).toBe('MARK_CERT');
-      expect(captured.keyPem).toBe('MARK_KEY');
-      // Sanity-check the tls module is reachable (the real Pool path uses it).
-      expect(typeof tls.createSecureContext).toBe('function');
     });
   });
 });

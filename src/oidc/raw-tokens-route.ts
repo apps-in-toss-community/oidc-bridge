@@ -12,7 +12,10 @@ import {
 
 export interface RawTokensRouteOpts {
   storage: Storage;
-  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+  resolveAppSealingKey: (input: {
+    appId: string;
+    sealingKeyVersion: number;
+  }) => Promise<Uint8Array>;
   revocationStore: RevocationStore;
   now: () => number;
 }
@@ -52,14 +55,18 @@ export function rawTokensRoute(opts: RawTokensRouteOpts) {
       return c.json({ error: 'not_found' }, 404);
     }
 
-    if (opts.revocationStore.isRevoked({ appId, token })) {
+    if (await opts.revocationStore.isRevoked({ appId, token })) {
       return bearerError(c, 'revoked');
     }
 
     let payload: SealedPayload;
     try {
       const sealingKey = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
-      payload = unwrapSealedToken({ token, resolveKey: () => sealingKey, expectedAppId: appId });
+      payload = await unwrapSealedToken({
+        token,
+        resolveKey: () => sealingKey,
+        expectedAppId: appId,
+      });
     } catch {
       return bearerError(c);
     }

@@ -1,6 +1,5 @@
-/// <reference types="@cloudflare/workers-types" />
-
 import { generateKeyPairSync } from 'node:crypto';
+import type { ExecutionContext } from '@cloudflare/workers-types';
 import { Miniflare } from 'miniflare';
 import { describe, expect, it } from 'vitest';
 import { runD1Migrations } from '../storage/d1.js';

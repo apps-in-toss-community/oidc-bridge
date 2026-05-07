@@ -1,10 +1,13 @@
-/// <reference types="@cloudflare/workers-types" />
-
 /**
  * Cloudflare Workers entry point for oidc-bridge (Phase 09c).
  *
  * Wires WebCrypto / D1 / Workers-binding implementations of every port and
  * delegates to the same `createApp(...)` factory used by the Node entry.
+ *
+ * Workers types (D1Database, ExecutionContext) are imported as `type` from
+ * `@cloudflare/workers-types`. This keeps them scoped to this file —
+ * a `/// <reference>` directive would pollute global lib for the whole project
+ * (e.g. tightening Node's TextDecoder constructor signature).
  *
  * **Phase 09c gap**: mTLS to Toss is not yet implemented for Workers. The
  * Workers `fetch` handler intercepts `POST /oidc/token` before it reaches the
@@ -14,6 +17,7 @@
  * `MtlsClient.WorkersBinding` and remove the intercept.
  */
 
+import type { D1Database, ExecutionContext } from '@cloudflare/workers-types';
 import { createApp } from '../app.js';
 import {
   loadBridgeFlags,

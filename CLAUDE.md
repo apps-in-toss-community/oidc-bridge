@@ -155,7 +155,7 @@ mTLS cert + key (PEM)는 `apps` 테이블 컬럼에 per-app sealing key로 봉�
 
 ## 기술 스택 (repo-specific)
 
-TypeScript ESM strict / **Hono** (+ `@hono/node-server`) / **Drizzle ORM** + **drizzle-kit** (Postgres + SQLite, hand-mirrored schemas) / **`pg`** (node-postgres) / **better-sqlite3** (sync, native binding — pnpm `onlyBuiltDependencies`) / **jose** (ID token sign+verify, JWKS) / **bcryptjs** (client_secret hash) / **@google-cloud/secret-manager** (lazy) / **undici** (HTTP/mTLS dispatcher) / **commander** (CLI) / **pino** + **pino-pretty** (logging) / **node:crypto** + **node:tls** (AEAD, HKDF, mTLS Agent) / **tsdown** 빌드 / **vitest** 테스트.
+TypeScript ESM strict / **Hono** (+ `@hono/node-server` for Node entry) / **Drizzle ORM** + **drizzle-kit** (Postgres + SQLite + D1, hand-mirrored schemas) / **`pg`** (node-postgres) / **better-sqlite3** (sync, native binding — pnpm `onlyBuiltDependencies`) / **`drizzle-orm/d1`** + **miniflare** (D1 driver + in-memory test harness) / **`@cloudflare/workers-types`** (type-only, dev) / **jose** (ID token sign+verify, JWKS) / **bcryptjs** (client_secret hash) / **@google-cloud/secret-manager** (lazy) / **undici** (Node mTLS dispatcher, kept behind `MtlsClient` Node adapter) / **commander** (CLI) / **pino** + **pino-pretty** (logging via `Logger` port; Workers entry uses JSON-line adapter) / **WebCrypto `crypto.subtle`** (AEAD, HKDF, digest — primary), **`node:crypto`** (AEAD/HKDF — Node adapter only, behind ports) / **tsdown** 빌드 / **vitest** 테스트.
 
 ## 공통 스택
 
@@ -187,7 +187,7 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 ## 테스트 전략
 
 - **Unit (vitest)**: sealing wrap/unwrap roundtrip + tamper rejection, HKDF derivation 결정성, ID token sign+verify, client auth (Basic + Post + bcrypt rotation overlap, public-origin), Toss envelope parsing, claim 매핑, MasterKeyProvider env/file/cache.
-- **Storage conformance (`runStorageConformance`)**: pg와 sqlite driver를 같은 테스트 매트릭스로 검증. PG는 `PG_TEST_URL` env로 gate (`describe.skip` if 미설정). CI는 `services.postgres: postgres:16-alpine` health-checked.
+- **Storage conformance (`runStorageConformance`)**: pg, sqlite, D1 driver를 같은 테스트 매트릭스로 검증. PG는 `PG_TEST_URL` env로 gate (`describe.skip` if 미설정). D1은 miniflare in-memory `D1Database`로 항상 실행. CI는 `services.postgres: postgres:16-alpine` health-checked.
 - **Integration (Hono `app.request()`, no network)**: `/oidc/token` happy + invalid_client + invalid_grant, `/oidc/userinfo` happy + bad bearer, `/oidc/revoke` always-200, discovery+JWKS shape consistency, Admin CRUD with/without token.
 - **mTLS**: `https.Agent` 빌드 indirect assertion. 실 핸드셰이크는 `pnpm test:e2e:live` (수동, sandbox cert 필요, CI 아님).
 - **Contract fixtures**: `src/__fixtures__/`에 redacted `/generate-token` + `/login-me` SUCCESS/FAIL 응답.
@@ -213,18 +213,23 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 | 5 | Real Toss mTLS | mTLS adapter, sandbox-fixture capture, error mapping, `test:e2e:live`. | ✅ main |
 | 6 | Admin sessions | `user_sessions` + stub session-login (feature flag), CLI `user create` / `user set-password`. | ✅ main |
 | 7 | CLI bootstrap/doctor | `bootstrap` (offline), `doctor` 진단 (env/db/master-key/JWKS/optional Toss probe). TTY-aware reporter + `--json`. | ✅ main |
-| **8** | **Status / rate-limit / observability** | **`/status` HTML, sliding-window rate limits, pino structured logs, request-id, optional OTel.** | **진행 예정** |
+| 8 | Status / rate-limit / observability | `/status` HTML, sliding-window rate limits, pino structured logs, request-id, optional OTel. | ✅ main |
+| 09c | Runtime abstraction (Workers-ready core) | `Aead`/`Kdf`/`Random`/`Digest`/`Logger`/`MtlsClient` ports; `Uint8Array` boundaries; D1 storage adapter; `runtime/node.ts` + `runtime/workers.ts` split. Workers serves `/healthz` + discovery; `/oidc/token` returns 501 until Phase 12c. | ✅ main |
 | 9 | Self-host artifacts | Dockerfile + docker-compose + SECURITY.md + SELF_HOSTING.md, clean-VPS smoke. | |
-| 10 | GCP Cloud Run | Cloud Run + Cloud SQL pg + GCPSM master keys + Cloud Build, DNS to `oidc-bridge.aitc.dev`. | |
-| **11** | **sdk-example dog-fooding (M5 launch gate)** | sdk-example legacy `/verify` 경로를 `appLogin → /oidc/token → signInWithIdToken`으로 교체. | |
+| 10c | Cloudflare Workers deploy (static routes) | wrangler config, Workers Secrets, first prod deploy of `/healthz` + discovery on Workers. | |
+| 11c | D1 schema migrations + multi-tenant control plane | `wrangler d1 migrations apply`, full Workers wiring of admin/sessions. | |
+| 12c | Workers `MtlsClient` binding + `/oidc/token` GA | Cloudflare mTLS binding impl; sandbox e2e against Toss; remove 501 intercept. | |
+| 13c | Dual-cloud cutover | Workers + Vultr concurrent; canary + rollback. | |
+| 14c | Vultr decommission | Workers-only; Vultr VPS retired. | |
+| **M5** | **sdk-example dog-fooding (launch gate)** | sdk-example legacy `/verify` 경로를 `appLogin → /oidc/token → signInWithIdToken`으로 교체. | |
 
 Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19). 이후 phase는 phase별 단일 PR.
 
 ## Status
 
-현재 main: zero-code mode Phase 0–7 머지됨 (#19, #20, #21, #22, #24, #25, #26, #27, #29, #32, #34). 다음은 Phase 8 (`/status` + rate-limit + observability). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
+현재 main: zero-code mode Phase 0–8 + 09c 머지됨. 다음은 Phase 10c (Cloudflare Workers deploy of static routes). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
 
-## Standing decisions (Phase 1, 3, 4, 5, 6, 7에서 굳어진 것)
+## Standing decisions (Phase 1, 3, 4, 5, 6, 7, 09c에서 굳어진 것)
 
 다음 phase에서도 그대로 따른다. 회고 상세:
 - Phase 0+1: [`docs/superpowers/retros/2026-05-02-phase-01-retro.md`](docs/superpowers/retros/2026-05-02-phase-01-retro.md)
@@ -233,6 +238,14 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 - Phase 5: [`docs/superpowers/retros/2026-05-03-phase-05-retro.md`](docs/superpowers/retros/2026-05-03-phase-05-retro.md)
 - Phase 6: [`docs/superpowers/retros/2026-05-03-phase-06-retro.md`](docs/superpowers/retros/2026-05-03-phase-06-retro.md)
 - Phase 7: [`docs/superpowers/retros/2026-05-05-phase-07-retro.md`](docs/superpowers/retros/2026-05-05-phase-07-retro.md)
+
+### Runtime abstraction (Phase 09c)
+
+- **Core ports live in `src/core/`, runtime adapters in `src/runtime/`.** `Aead`, `Kdf`, `Random`, `Digest`, `Logger`, `MtlsClient`. Each has a Node adapter (`runtime/node-*.ts`) and a WebCrypto/Workers-friendly default. `Buffer` and `node:crypto` / `node:tls` / `undici` imports are forbidden anywhere in `src/` outside `src/runtime/node-*.ts` (test files excepted, since they always run on Node). `Uint8Array` is the cross-runtime byte type at every port boundary.
+- **WebCrypto `seal`/`open` is async**, so `wrapSealedToken` / `unwrapSealedToken` and `encryptColumn` / `decryptColumn` are `async`. All callers `await`. Sealed `ait_*` tokens issued before this phase remain decryptable — the on-the-wire format is locked by golden vectors in `src/oidc/__fixtures__/sealed-token-golden.json` (and equivalent for `apps/encryption`). Cross-impl tests verify Node↔WebCrypto wire interop on the same byte stream.
+- **Storage has three drivers** sharing `runStorageConformance`: `pg`, `sqlite`, `d1`. D1 lacks `IF NOT EXISTS` on DDL (workerd SQLite quirk) and rejects DESC in expression indexes — use plain `CREATE` and ascending order in `schema.d1.ts`. miniflare 4 in-memory D1 powers the test suite; D1 migrations apply at deploy time, not per-request.
+- **`@cloudflare/workers-types` is type-only**, imported via `import type { D1Database, ... } from '@cloudflare/workers-types'`. Never use `/// <reference types="@cloudflare/workers-types" />` — it pollutes global lib for the whole project (e.g. tightens Node's `TextDecoder` constructor signature so non-Workers files fail to typecheck). `tsconfig.json` `types` array stays `["node"]`.
+- **`runtime/workers.ts` must not import `node:*`** and must read env from the Workers `env` parameter, never `process.env`. Production today still runs on Node via `runtime/node.ts`; the Workers entry compiles, serves `/healthz` + discovery + JWKS, and explicitly returns 501 for `POST /oidc/token` until Phase 12c lands the mTLS binding.
 
 ### pnpm 10 + native modules
 

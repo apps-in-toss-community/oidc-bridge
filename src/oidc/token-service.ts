@@ -34,7 +34,10 @@ export interface TokenServiceDeps {
   registry: SigningKeyRegistry;
   issuer: string;
   idTokenTtlSeconds: number;
-  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+  resolveAppSealingKey: (input: {
+    appId: string;
+    sealingKeyVersion: number;
+  }) => Promise<Uint8Array>;
   now: () => number;
 }
 
@@ -79,10 +82,12 @@ async function finalize(
 ): Promise<TokenResponse> {
   const now = deps.now();
   const tossAtExp = now + ts.expiresIn;
-  const sealingKey = await deps.resolveAppSealingKey({
+  const sealingKeyU8 = await deps.resolveAppSealingKey({
     appId: app.id,
     sealingKeyVersion: app.sealingKeyVersion,
   });
+  // wrapSealedToken still takes Buffer (Task 9 will widen it); wrap at call site.
+  const sealingKey = Buffer.from(sealingKeyU8);
   const sealCommon = {
     sealingKey,
     sealingKeyVersion: app.sealingKeyVersion,

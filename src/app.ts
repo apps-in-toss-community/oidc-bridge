@@ -46,7 +46,10 @@ export interface CreateAppOptions {
     signingKeyRegistry: SigningKeyRegistry;
     storage: Storage;
     tossAdapter: TossAdapter;
-    resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+    resolveAppSealingKey: (input: {
+      appId: string;
+      sealingKeyVersion: number;
+    }) => Promise<Uint8Array>;
     revocationStore: RevocationStore;
     now?: () => number;
   };

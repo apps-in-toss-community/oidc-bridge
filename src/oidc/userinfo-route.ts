@@ -10,7 +10,10 @@ import { peekSealedTokenAppId, peekSealedTokenVersion, unwrapSealedToken } from 
 export interface UserinfoRouteOpts {
   storage: Storage;
   tossAdapter: TossAdapter;
-  resolveAppSealingKey: (input: { appId: string; sealingKeyVersion: number }) => Promise<Buffer>;
+  resolveAppSealingKey: (input: {
+    appId: string;
+    sealingKeyVersion: number;
+  }) => Promise<Uint8Array>;
   revocationStore: RevocationStore;
 }
 
@@ -44,7 +47,9 @@ export function userinfoRoute(opts: UserinfoRouteOpts) {
 
     let payload: SealedPayload;
     try {
-      const sealingKey = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
+      const sealingKeyU8 = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
+      // resolveKey in sealed-token.ts still returns Buffer (Task 9 will widen it).
+      const sealingKey = Buffer.from(sealingKeyU8);
       payload = unwrapSealedToken({ token, resolveKey: () => sealingKey, expectedAppId: appId });
     } catch {
       return bearerError(c, 'token rejected');

@@ -66,7 +66,9 @@ export function createMtlsMaterialAccessor(
     const app = await deps.storage.getApp(appId);
     if (!app) return null;
     const masterKey = await deps.getMasterKey(app.sealingKeyVersion);
-    const sealingKey = deriveSealingKey({ masterKey, appId });
+    const sealingKeyU8 = await deriveSealingKey({ masterKey, appId });
+    // encryption.ts still takes Buffer (Task 9 will widen it); wrap at call site.
+    const sealingKey = Buffer.from(sealingKeyU8);
     const aad = Buffer.from(appId, 'utf8');
     const certPem = decryptColumn({
       key: sealingKey,

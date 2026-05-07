@@ -168,7 +168,9 @@ export function createService(opts: CreateServiceOptions): Service {
     async create(ctx, input) {
       await getOwnedWorkspace(ctx, input.workspaceId);
       const appId = newId('app');
-      const sealingKey = deriveSealingKey({ masterKey: input.masterKey, appId });
+      const sealingKeyU8 = await deriveSealingKey({ masterKey: input.masterKey, appId });
+      // encryptColumn still takes Buffer (Task 9 will widen it); wrap at call site.
+      const sealingKey = Buffer.from(sealingKeyU8);
       const aad = Buffer.from(appId, 'utf8');
       const certEnc = encryptColumn({ key: sealingKey, plaintext: input.mtlsCert, aad });
       const keyEnc = encryptColumn({ key: sealingKey, plaintext: input.mtlsKey, aad });

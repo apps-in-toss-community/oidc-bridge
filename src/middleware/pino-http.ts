@@ -1,12 +1,12 @@
 import { performance } from 'node:perf_hooks';
 import type { MiddlewareHandler } from 'hono';
-import type pino from 'pino';
 import { fromUtf8, toHex } from '../core/bytes.js';
 import type { Digest } from '../core/digest.js';
+import type { Logger } from '../core/logger.js';
 import { nodeDigest } from '../runtime/node-digest.js';
 
 export interface PinoHttpOpts {
-  logger: pino.Logger;
+  logger: Logger;
   ipSalt: string;
   digest?: Digest;
 }

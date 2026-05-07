@@ -56,7 +56,7 @@ export function selectTossAdapter(
 
 interface MtlsAccessorDeps {
   storage: Storage;
-  getMasterKey: (version: number) => Promise<Buffer>;
+  getMasterKey: (version: number) => Promise<Uint8Array>;
 }
 
 export function createMtlsMaterialAccessor(

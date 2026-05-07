@@ -20,7 +20,9 @@ describe('createFileMasterKeyProvider', () => {
     writeFileSync(join(dir, 'v1.key'), bytes, { mode: 0o600 });
     const p = createFileMasterKeyProvider({ dir });
     const out = await p.getKeyBytes(1);
-    expect(out.equals(bytes)).toBe(true);
+    expect(out).toBeInstanceOf(Uint8Array);
+    expect(out).toHaveLength(32);
+    expect(Array.from(out)).toEqual(Array.from(bytes));
   });
 
   it('lists discovered versions sorted', async () => {

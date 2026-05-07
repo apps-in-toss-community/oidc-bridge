@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { toHex } from '../core/bytes.js';
 import { createEnvMasterKeyProvider } from './env-provider.js';
 
 describe('createEnvMasterKeyProvider', () => {
@@ -13,8 +14,9 @@ describe('createEnvMasterKeyProvider', () => {
     process.env.MASTER_KEY_TEST_1_HEX = hex;
     const p = createEnvMasterKeyProvider({ prefix: 'MASTER_KEY_TEST_' });
     const bytes = await p.getKeyBytes(1);
+    expect(bytes).toBeInstanceOf(Uint8Array);
     expect(bytes).toHaveLength(32);
-    expect(bytes.toString('hex')).toBe(hex);
+    expect(toHex(bytes)).toBe(hex);
   });
 
   it('lists discovered versions sorted', async () => {

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { toHex } from '../core/bytes.js';
 import { createMasterKeyProvider } from './index.js';
 
 describe('createMasterKeyProvider', () => {
@@ -22,7 +23,7 @@ describe('createMasterKeyProvider', () => {
     process.env.MASTER_KEY_1_HEX = 'aa'.repeat(32);
     const p = createMasterKeyProvider();
     expect(await p.listVersions()).toEqual([1]);
-    expect((await p.getKeyBytes(1)).toString('hex')).toBe('aa'.repeat(32));
+    expect(toHex(await p.getKeyBytes(1))).toBe('aa'.repeat(32));
   });
 
   it('builds a file-backed provider', async () => {

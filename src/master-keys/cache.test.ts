@@ -7,7 +7,7 @@ function makeMockProvider(): { provider: MasterKeyProvider; calls: () => number 
   const provider: MasterKeyProvider = {
     async getKeyBytes(v) {
       calls += 1;
-      return Buffer.alloc(32, v);
+      return new Uint8Array(32).fill(v);
     },
     async listVersions() {
       return [1, 2, 3];
@@ -22,7 +22,7 @@ describe('withTtlCache', () => {
     const cached = withTtlCache(m.provider, { ttlMs: 1000 });
     const a = await cached.getKeyBytes(1);
     const b = await cached.getKeyBytes(1);
-    expect(a.equals(b)).toBe(true);
+    expect(a).toBe(b); // same reference when cached
     expect(m.calls()).toBe(1);
   });
 
@@ -44,7 +44,7 @@ describe('withTtlCache', () => {
     let listCalls = 0;
     const counted: MasterKeyProvider = {
       async getKeyBytes(v) {
-        return Buffer.alloc(32, v);
+        return new Uint8Array(32).fill(v);
       },
       async listVersions() {
         listCalls += 1;

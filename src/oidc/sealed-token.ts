@@ -1,4 +1,6 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv } from 'node:crypto';
+import type { Random } from '../core/random.js';
+import { nodeRandom } from '../runtime/node-random.js';
 
 export interface SealedPayload {
   appId: string;
@@ -13,6 +15,7 @@ export interface WrapInput {
   sealingKey: Buffer;
   sealingKeyVersion: number;
   payload: SealedPayload;
+  random?: Random;
 }
 
 const VERSION_BYTES = 1;
@@ -34,7 +37,8 @@ export function wrapSealedToken(input: WrapInput): string {
   if (userKeyBuf.length === 0 || userKeyBuf.length > 255) {
     throw new Error('tossUserKey length out of range');
   }
-  const iv = randomBytes(IV_BYTES);
+  const random = input.random ?? nodeRandom;
+  const iv = Buffer.from(random.bytes(IV_BYTES));
   const aad = buildAad(input.payload.appId, input.payload.tossUserKey, input.sealingKeyVersion);
   const cipher = createCipheriv('aes-256-gcm', input.sealingKey, iv);
   cipher.setAAD(aad);

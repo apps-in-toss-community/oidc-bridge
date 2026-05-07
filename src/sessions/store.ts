@@ -1,11 +1,14 @@
-import { randomBytes } from 'node:crypto';
+import { toHex } from '../core/bytes.js';
+import type { Random } from '../core/random.js';
+import { nodeRandom } from '../runtime/node-random.js';
 import type { Storage } from '../storage/interface.js';
 import type { Session, SessionStore } from './types.js';
 
-export function createSessionStore(storage: Storage): SessionStore {
+export function createSessionStore(storage: Storage, opts: { random?: Random } = {}): SessionStore {
+  const random = opts.random ?? nodeRandom;
   return {
     async create(userId, ttlMs) {
-      const id = randomBytes(16).toString('hex');
+      const id = toHex(random.bytes(16));
       const now = new Date();
       const expiresAt = new Date(now.getTime() + ttlMs);
       const row = await storage.createUserSession({ id, userId, expiresAt });

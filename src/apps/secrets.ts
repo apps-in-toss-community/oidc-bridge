@@ -1,14 +1,13 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import { toBase64Url } from '../core/bytes.js';
+import type { Random } from '../core/random.js';
+import { nodeRandom } from '../runtime/node-random.js';
 
 const BCRYPT_ROUNDS = 12;
 
-function urlSafeRandom(byteLen: number): string {
-  return randomBytes(byteLen).toString('base64url');
-}
-
-export function generateClientSecret(): string {
-  return urlSafeRandom(32);
+export function generateClientSecret(random: Random = nodeRandom): string {
+  return toBase64Url(random.bytes(32));
 }
 
 export async function hashClientSecret(plain: string): Promise<string> {
@@ -22,8 +21,8 @@ export async function verifyClientSecret(plain: string, hashes: string[]): Promi
   return false;
 }
 
-export function generateApiToken(): string {
-  return `tok_${urlSafeRandom(32)}`;
+export function generateApiToken(random: Random = nodeRandom): string {
+  return `tok_${toBase64Url(random.bytes(32))}`;
 }
 
 export function hashApiToken(token: string): string {

@@ -1,4 +1,6 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv } from 'node:crypto';
+import type { Random } from '../core/random.js';
+import { nodeRandom } from '../runtime/node-random.js';
 
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
@@ -8,6 +10,7 @@ export interface EncryptColumnInput {
   key: Buffer;
   plaintext: Buffer;
   aad: Buffer;
+  random?: Random;
 }
 
 export interface DecryptColumnInput {
@@ -18,7 +21,8 @@ export interface DecryptColumnInput {
 
 export function encryptColumn(input: EncryptColumnInput): Buffer {
   if (input.key.length !== KEY_BYTES) throw new Error('encryptColumn: key must be 32 bytes');
-  const iv = randomBytes(IV_BYTES);
+  const random = input.random ?? nodeRandom;
+  const iv = Buffer.from(random.bytes(IV_BYTES));
   const cipher = createCipheriv('aes-256-gcm', input.key, iv);
   cipher.setAAD(input.aad);
   const enc = Buffer.concat([cipher.update(input.plaintext), cipher.final()]);

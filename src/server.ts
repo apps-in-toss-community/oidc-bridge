@@ -20,6 +20,7 @@ import { maybeStartOtel } from './observability/otel.js';
 import { createAppSealingKeyResolver } from './oidc/app-sealing-key.js';
 import { createInMemoryRevocationStore } from './oidc/revocation-store.js';
 import { createSigningKeyRegistry } from './oidc/signing-keys.js';
+import { createNodeMtlsFactory } from './runtime/node-mtls.js';
 import { createSessionService } from './sessions/service.js';
 import { createSessionStore } from './sessions/store.js';
 import { runStatusProbes } from './status/probes.js';
@@ -28,7 +29,7 @@ import { createPgStorage } from './storage/pg.js';
 import { createSqliteStorage } from './storage/sqlite.js';
 import type { TossAdapter } from './toss/adapter.js';
 import { MockTossAdapter } from './toss/mock-adapter.js';
-import { RealTossAdapter, type RealTossAdapterDeps } from './toss/real-adapter.js';
+import { RealTossAdapter } from './toss/real-adapter.js';
 
 async function openStorage(): Promise<Storage> {
   const kind = (process.env.STORAGE ?? 'sqlite').toLowerCase();
@@ -46,12 +47,21 @@ async function openStorage(): Promise<Storage> {
   throw new Error(`unknown STORAGE=${kind}`);
 }
 
+export interface SelectTossAdapterDeps {
+  apiBase: string;
+  getMtlsMaterial: (appId: string) => Promise<{ certPem: string; keyPem: string } | null>;
+}
+
 export function selectTossAdapter(
   env: NodeJS.ProcessEnv,
-  deps: Omit<RealTossAdapterDeps, 'fetchImpl' | 'buildDispatcher'>,
+  deps: SelectTossAdapterDeps,
 ): TossAdapter {
   if (env.BRIDGE_TOSS_ADAPTER === 'mock') return new MockTossAdapter();
-  return new RealTossAdapter(deps);
+  const mtlsFactory = createNodeMtlsFactory({
+    apiBase: deps.apiBase,
+    getMtlsMaterial: deps.getMtlsMaterial,
+  });
+  return new RealTossAdapter({ apiBase: deps.apiBase, mtlsFactory });
 }
 
 interface MtlsAccessorDeps {

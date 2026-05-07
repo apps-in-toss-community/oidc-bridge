@@ -1,4 +1,4 @@
-import { Pool } from 'undici';
+import type { MtlsClientFactory } from '../core/mtls.js';
 import {
   type GenerateTokenInput,
   type LoginMeOutput,
@@ -12,9 +12,7 @@ import { mapEnvelopeError, parseEnvelope } from './envelope.js';
 
 export interface RealTossAdapterDeps {
   apiBase: string;
-  getMtlsMaterial: (appId: string) => Promise<{ certPem: string; keyPem: string } | null>;
-  fetchImpl?: typeof fetch;
-  buildDispatcher?: (opts: { certPem: string; keyPem: string }) => unknown;
+  mtlsFactory: MtlsClientFactory;
 }
 
 interface TossSuccessTokenBody {
@@ -37,16 +35,11 @@ interface TossLoginMeBody {
 }
 
 export class RealTossAdapter implements TossAdapter {
-  private readonly dispatchers = new Map<string, unknown>();
-  private readonly fetchImpl: typeof fetch;
-
-  constructor(private readonly deps: RealTossAdapterDeps) {
-    this.fetchImpl = deps.fetchImpl ?? fetch;
-  }
+  constructor(private readonly deps: RealTossAdapterDeps) {}
 
   async generateToken(ctx: TossAdapterContext, input: GenerateTokenInput): Promise<TossTokenSet> {
-    const dispatcher = await this.dispatcherFor(ctx.appId);
-    const body = await this.callJson<TossSuccessTokenBody>(PATH_GENERATE_TOKEN, dispatcher, {
+    const client = await this.clientFor(ctx.appId);
+    const body = await this.callJson<TossSuccessTokenBody>(PATH_GENERATE_TOKEN, client, {
       authorizationCode: input.authorizationCode,
       referrer: input.referrer,
     });
@@ -54,18 +47,18 @@ export class RealTossAdapter implements TossAdapter {
   }
 
   async refreshToken(ctx: TossAdapterContext, input: RefreshTokenInput): Promise<TossTokenSet> {
-    const dispatcher = await this.dispatcherFor(ctx.appId);
-    const body = await this.callJson<TossSuccessTokenBody>(PATH_REFRESH_TOKEN, dispatcher, {
+    const client = await this.clientFor(ctx.appId);
+    const body = await this.callJson<TossSuccessTokenBody>(PATH_REFRESH_TOKEN, client, {
       refreshToken: input.refreshToken,
     });
     return this.toTokenSet(body);
   }
 
   async loginMe(ctx: TossAdapterContext, input: { accessToken: string }): Promise<LoginMeOutput> {
-    const dispatcher = await this.dispatcherFor(ctx.appId);
+    const client = await this.clientFor(ctx.appId);
     const body = await this.callJson<TossLoginMeBody>(
       PATH_LOGIN_ME,
-      dispatcher,
+      client,
       {},
       { authorization: `Bearer ${input.accessToken}` },
     );
@@ -78,40 +71,36 @@ export class RealTossAdapter implements TossAdapter {
   }
 
   async accessRemove(ctx: TossAdapterContext, input: { userKey: string }): Promise<void> {
-    const dispatcher = await this.dispatcherFor(ctx.appId);
-    await this.callJson<unknown>(PATH_ACCESS_REMOVE, dispatcher, { userKey: input.userKey });
+    const client = await this.clientFor(ctx.appId);
+    await this.callJson<unknown>(PATH_ACCESS_REMOVE, client, { userKey: input.userKey });
   }
 
-  private async dispatcherFor(appId: string): Promise<unknown> {
-    const cached = this.dispatchers.get(appId);
-    if (cached !== undefined) return cached;
-    const mtls = await this.deps.getMtlsMaterial(appId);
-    if (!mtls) {
-      throw new TossUpstreamError('upstream_error', `no mtls material for app=${appId}`);
+  // The factory is responsible for caching; missing-material throws a plain Error
+  // which we convert here to TossUpstreamError for caller consistency.
+  private async clientFor(appId: string) {
+    try {
+      return await this.deps.mtlsFactory.forApp(appId);
+    } catch (err) {
+      throw new TossUpstreamError(
+        'upstream_error',
+        err instanceof Error ? err.message : `no mtls material for app=${appId}`,
+      );
     }
-    const apiBase = this.deps.apiBase;
-    const builder =
-      this.deps.buildDispatcher ??
-      ((opts: { certPem: string; keyPem: string }) => defaultBuildDispatcher({ ...opts, apiBase }));
-    const fresh = builder({ certPem: mtls.certPem, keyPem: mtls.keyPem });
-    this.dispatchers.set(appId, fresh);
-    return fresh;
   }
 
   private async callJson<T>(
     path: string,
-    dispatcher: unknown,
+    client: { request(url: string, init: RequestInit): Promise<Response> },
     payload: unknown,
     extraHeaders: Record<string, string> = {},
   ): Promise<T> {
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.deps.apiBase}${path}`, {
+      response = await client.request(`${this.deps.apiBase}${path}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...extraHeaders },
         body: JSON.stringify(payload),
-        ...((dispatcher !== undefined ? { dispatcher } : {}) as Record<string, unknown>),
-      } as RequestInit);
+      });
     } catch (err) {
       throw mapEnvelopeError(err);
     }
@@ -143,17 +132,4 @@ export class RealTossAdapter implements TossAdapter {
       scope: body.scope.split(' ').filter(Boolean),
     };
   }
-}
-
-export function defaultBuildDispatcher(opts: {
-  certPem: string;
-  keyPem: string;
-  apiBase: string;
-}): Pool {
-  return new Pool(opts.apiBase, {
-    connect: {
-      cert: opts.certPem,
-      key: opts.keyPem,
-    },
-  });
 }

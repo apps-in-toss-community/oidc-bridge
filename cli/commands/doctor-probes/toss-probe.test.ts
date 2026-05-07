@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runTossProbe } from './toss-probe.js';
 
-const stubDispatcher = () => ({});
-
 describe('runTossProbe', () => {
   it('yellow when no cert/key provided (skip)', async () => {
     const r = await runTossProbe({
@@ -31,7 +29,6 @@ describe('runTossProbe', () => {
       keyPem: 'K',
       accessToken: 'doctor_at',
       fetchImpl,
-      buildDispatcher: stubDispatcher,
     });
     expect(r.state).toBe('green');
     expect(r.detail).toContain('SUCCESS');
@@ -54,7 +51,6 @@ describe('runTossProbe', () => {
       keyPem: 'K',
       accessToken: 'fake_at',
       fetchImpl,
-      buildDispatcher: stubDispatcher,
     });
     expect(r.state).toBe('green');
     expect(r.detail).toContain('handshake');
@@ -70,7 +66,6 @@ describe('runTossProbe', () => {
       keyPem: 'K',
       accessToken: 'fake_at',
       fetchImpl,
-      buildDispatcher: stubDispatcher,
     });
     expect(r.state).toBe('red');
     expect(r.detail).toContain('ECONNREFUSED');
@@ -84,7 +79,6 @@ describe('runTossProbe', () => {
       keyPem: 'K',
       accessToken: 'fake_at',
       fetchImpl,
-      buildDispatcher: stubDispatcher,
     });
     expect(r.state).toBe('red');
   });

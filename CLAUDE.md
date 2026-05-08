@@ -214,20 +214,30 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 | 6 | Admin sessions | `user_sessions` + stub session-login (feature flag), CLI `user create` / `user set-password`. | ✅ main |
 | 7 | CLI bootstrap/doctor | `bootstrap` (offline), `doctor` 진단 (env/db/master-key/JWKS/optional Toss probe). TTY-aware reporter + `--json`. | ✅ main |
 | 8 | Status / rate-limit / observability | `/status` HTML, sliding-window rate limits, pino structured logs, request-id, optional OTel. | ✅ main |
-| 09c | Runtime abstraction (Workers-ready core) | `Aead`/`Kdf`/`Random`/`Digest`/`Logger`/`MtlsClient` ports; `Uint8Array` boundaries; D1 storage adapter; `runtime/node.ts` + `runtime/workers.ts` split. Workers serves `/healthz` + discovery; `/oidc/token` returns 501 until Phase 12c. | ✅ main |
-| 9 | Self-host artifacts | Dockerfile + docker-compose + SECURITY.md + SELF_HOSTING.md, clean-VPS smoke. | |
-| 10c | Cloudflare Workers deploy (static routes) | wrangler config, Workers Secrets, first prod deploy of `/healthz` + discovery on Workers. | |
-| 11c | D1 schema migrations + multi-tenant control plane | `wrangler d1 migrations apply`, full Workers wiring of admin/sessions. | |
-| 12c | Workers `MtlsClient` binding + `/oidc/token` GA | Cloudflare mTLS binding impl; sandbox e2e against Toss; remove 501 intercept. | |
-| 13c | Dual-cloud cutover | Workers + Vultr concurrent; canary + rollback. | ✅ Workers-cloud |
-| 14c | Vultr decommission | Workers-only; Vultr VPS retired. | ✅ Workers-cloud |
-| **M5** | **sdk-example dog-fooding (launch gate)** | sdk-example legacy `/verify` 경로를 `appLogin → /oidc/token → signInWithIdToken`으로 교체. | |
+| 09c | Runtime abstraction (Workers-ready core) | `Aead`/`Kdf`/`Random`/`Digest`/`Logger`/`MtlsClient` ports; `Uint8Array` boundaries; D1 storage adapter; `runtime/node.ts` + `runtime/workers.ts` split. Workers serves `/healthz` + discovery; `/oidc/token` returns 501 until cloud Phase 12c. | ✅ main |
 
 Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19). 이후 phase는 phase별 단일 PR.
 
+### Cloud separation (10c+) — 별도 repo
+
+09c 이후의 모든 cloud-side phase (`10c` 이상)는 **별도 private repo `oidc-bridge-cloud`**에서 진행된다. 본 repo의 phase matrix는 `09c`에서 정지 — 이 repo는 self-host용 코드 베이스 + cloud Worker가 ports/adapters로 재사용하는 vendor source 역할이다. cloud-side phase plan은 [`docs/superpowers/specs/2026-05-07-cloudflare-cloud-separation.md`](docs/superpowers/specs/2026-05-07-cloudflare-cloud-separation.md) §10이 source of truth.
+
+요약 (2026-05-08 기준):
+
+| Cloud Phase | 상태 | 위치 |
+|---|---|---|
+| 10c — repo scaffold | ✅ merged | oidc-bridge-cloud#1 |
+| 11c — tenant template + DNS cutover + Vultr decommission (옛 13c·14c 흡수) | ✅ merged | oidc-bridge-cloud#3–#10 + oidc-bridge#48 |
+| 12c — `MtlsClient` binding + `/oidc/token` GA | ⬜ in-flight | oidc-bridge-cloud (3-PR split) |
+| Rotation phase — state machine + admin UI | ⬜ planned | oidc-bridge-cloud |
+| Self-host phase — generic Docker | ⬜ deferred | oidc-bridge (본 repo) |
+| **M5 — sdk-example dog-food on cloud (launch gate)** | ⬜ planned, gates on 12c | sdk-example |
+
+본 repo의 `oidc-bridge.aitc.dev` 공용 인스턴스 운영은 **2026-05-08부로 cloud repo로 완전 이관**되었다 — 본 repo의 Vultr SSH-deploy GHA는 [#48](https://github.com/apps-in-toss-community/oidc-bridge/pull/48)에서 제거됐고, `docker-compose.yml` + `Dockerfile`은 self-host 용도로만 보존된다. 본 repo에서 향후 작업 가능성: bug fix, security patch, self-host phase의 generic Docker 정비, vendor-source 업데이트 (cloud repo가 sha pin 갱신할 때 동기화).
+
 ## Status
 
-현재 main: zero-code mode Phase 0–8 + 09c 머지됨. 다음은 Phase 10c (Cloudflare Workers deploy of static routes). 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
+현재 main: zero-code mode Phase 0–8 + 09c 머지됨. 본 repo의 phase plan은 09c에서 정지 — 이후 cloud-side 작업은 `oidc-bridge-cloud` repo에서 진행된다 (위 cloud separation 표). 본 repo는 self-host 코드 베이스 + cloud Worker가 vendor-source로 가져가는 ports/adapters 정본 역할. 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 공용 인스턴스(`oidc-bridge.aitc.dev`)는 2026-05-08부로 cloud repo의 Cloudflare Workers로 cutover되어 본 repo의 Vultr deploy 경로는 폐기됨 ([#48](https://github.com/apps-in-toss-community/oidc-bridge/pull/48)). 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
 
 ## Standing decisions (Phase 1, 3, 4, 5, 6, 7, 09c에서 굳어진 것)
 

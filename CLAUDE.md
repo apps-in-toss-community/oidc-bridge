@@ -32,8 +32,8 @@
 
 ### 운영 모델
 
-- **공용 인스턴스** (`oidc-bridge.aitc.dev`, SLA 없음) — Vultr Cloud Compute Seoul 단일 VPS + Docker + Caddy. ~$5/mo (`vc2-1c-1gb`).
-- **Self-host** — 동일 Docker 이미지 + 동일 `docker-compose.yml`. `RATE_LIMIT_ENABLED=false` 기본. Spark 플랜에서 Firebase Custom Token을 원하면 self-host가 유일한 길.
+- **공용 인스턴스** (`oidc-bridge.aitc.dev`, SLA 없음) — 별도 repo `oidc-bridge-cloud`의 Cloudflare Workers (Workers for Platforms 디스패치 + per-tenant Worker). 본 repo의 Node 서버 코드를 그 곳에서도 ports/adapters로 재사용한다. 운영 절차는 그쪽 repo가 source of truth.
+- **Self-host** — 본 repo의 Docker 이미지 + `docker-compose.yml`. `RATE_LIMIT_ENABLED=false` 기본. Spark 플랜에서 Firebase Custom Token을 원하면 self-host가 유일한 길.
 
 보안이 민감한 production 사용자는 self-host 권장.
 
@@ -197,7 +197,7 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 
 ## 릴리즈 정책
 
-**서비스 repo** — main push = 배포. **Changesets 미사용**, Docker 이미지 tag가 버전 역할. 공용 인스턴스: main push → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>` → SSH로 Vultr Seoul VPS에 `docker compose pull && up -d` (`.github/workflows/deploy.yml`). 상세 셋업은 [`docs/DEPLOY.md`](./docs/DEPLOY.md). Self-host는 동일 이미지를 자기 인프라에 (`RATE_LIMIT_ENABLED=false` 기본). 의미 있는 마일스톤은 GitHub Release 수동.
+**서비스 repo** — main push = 이미지 발행. **Changesets 미사용**, Docker 이미지 tag가 버전 역할. main push → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>`. Self-host는 자기 인프라에서 `docker compose pull && up -d`(`RATE_LIMIT_ENABLED=false` 기본). 공용 인스턴스(`oidc-bridge.aitc.dev`)는 본 repo가 아니라 `oidc-bridge-cloud` (Cloudflare Workers)에서 따로 배포된다. 의미 있는 마일스톤은 GitHub Release 수동.
 
 ## 마일스톤 (Phase 0..11)
 
@@ -219,8 +219,8 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 | 10c | Cloudflare Workers deploy (static routes) | wrangler config, Workers Secrets, first prod deploy of `/healthz` + discovery on Workers. | |
 | 11c | D1 schema migrations + multi-tenant control plane | `wrangler d1 migrations apply`, full Workers wiring of admin/sessions. | |
 | 12c | Workers `MtlsClient` binding + `/oidc/token` GA | Cloudflare mTLS binding impl; sandbox e2e against Toss; remove 501 intercept. | |
-| 13c | Dual-cloud cutover | Workers + Vultr concurrent; canary + rollback. | |
-| 14c | Vultr decommission | Workers-only; Vultr VPS retired. | |
+| 13c | Dual-cloud cutover | Workers + Vultr concurrent; canary + rollback. | ✅ Workers-cloud |
+| 14c | Vultr decommission | Workers-only; Vultr VPS retired. | ✅ Workers-cloud |
 | **M5** | **sdk-example dog-fooding (launch gate)** | sdk-example legacy `/verify` 경로를 `appLogin → /oidc/token → signInWithIdToken`으로 교체. | |
 
 Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19). 이후 phase는 phase별 단일 PR.

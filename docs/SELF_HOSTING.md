@@ -2,8 +2,9 @@
 
 This walkthrough takes a clean machine to a working bridge in under five
 minutes. It uses **sqlite + file-backed master key**, which is the right
-choice for a single-app self-host. (Postgres + GCP Secret Manager is for
-the public instance — see [`DEPLOY.md`](./DEPLOY.md).)
+choice for a single-app self-host. Larger deployments can swap in Postgres
+(`STORAGE=pg`, `DATABASE_URL=…`) and a hosted secret manager
+(`MASTER_KEY_PROVIDER=gcpsm` or `file`) without touching application code.
 
 The `bootstrap` and `doctor` commands enforce the assumptions described
 in the [zero-code mode design](./superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md);

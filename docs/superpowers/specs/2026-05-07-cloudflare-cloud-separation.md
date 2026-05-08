@@ -537,23 +537,27 @@ as-is — they produce the OIDC code, admin UI, sessions, and observability
 that this spec inherits. Phase 9 is cancelled (Vultr-specific). The new
 plan replaces 9–11:
 
-| Phase | Title | Output |
-|---|---|---|
-| 09c | Runtime abstraction | `MtlsClient` + `Storage` interfaces; Node + Workers implementations behind the same Hono app |
-| 10c | `oidc-bridge-cloud` private repo skeleton | Dispatcher Worker, admin endpoints stub, CF API client, tenant registry D1 |
-| 11c | Tenant Worker template | One-Worker-per-tenant deployment automation; first canary tenant (`aitc-sdk-example` 31146) running on cloud |
-| 12c | Rotation state machine + admin UI | `/admin/tenants/:id/rotate` end-to-end with the §5 state machine; soak/rollback UX |
-| 13c | Self-host generic Docker | Stripped-down Phase 9 redux: image + compose example, no Vultr automation |
-| 14c | sdk-example dog-food on cloud | Canary tenant becomes the production target for sdk-example, supersedes the Phase 11 dog-food milestone |
+| Phase | Title | Output | Status |
+|---|---|---|---|
+| 09c | Runtime abstraction | `MtlsClient` + `Storage` interfaces; Node + Workers implementations behind the same Hono app | ✅ merged ([oidc-bridge#44](https://github.com/apps-in-toss-community/oidc-bridge/pull/44)) |
+| 10c | `oidc-bridge-cloud` private repo skeleton | Dispatcher Worker, admin endpoints stub, CF API client, tenant registry D1 | ✅ merged ([oidc-bridge-cloud#1](https://github.com/apps-in-toss-community/oidc-bridge-cloud/pull/1)) |
+| 11c | Tenant Worker template + DNS cutover + Vultr decommission | One-Worker-per-tenant deployment automation; first canary tenant (`aitc-sdk-example` 31146) running on cloud; `oidc-bridge.aitc.dev` cutover to dispatcher Worker; Vultr Seoul VPS destroyed. **Folds the originally-separate Phase 13c (dual-cloud cutover) and Phase 14c (Vultr decommission) into a single phase** because the Vultr public instance had zero real users — dual-cloud staging added drag without reducing risk. | ✅ merged ([oidc-bridge-cloud#3–#10](https://github.com/apps-in-toss-community/oidc-bridge-cloud/pull/3), [oidc-bridge#48](https://github.com/apps-in-toss-community/oidc-bridge/pull/48)) |
+| 12c | `MtlsClient` binding + `/oidc/token` GA | Workers `MtlsClient` adapter using the CF `mtls_certificate` Fetcher binding; vendored OIDC token pipeline + Toss adapter wired into the tenant template; per-tenant D1 schema (`apps`, `audit_log`, `revoked_tokens`); the 501 stubs at `/oidc/token`/`/oidc/userinfo`/`/oidc/revoke` replaced with real handlers; sandbox e2e against Toss using the canary's bound cert. | ⬜ in-flight |
+| Rotation | Rotation state machine + admin UI | `/admin/tenants/:id/rotate` end-to-end with the §5 state machine; soak/rollback UX. **Originally numbered 12c**; renamed to a non-numbered later phase because 12c was retargeted to `/oidc/token` GA (the launch-blocking work) once 11c absorbed 13c/14c. | ⬜ planned |
+| Self-host | Self-host generic Docker | Stripped-down Phase 9 redux: image + compose example, no Vultr automation. **Originally numbered 13c**; deferred behind Rotation because the existing self-host artifacts in `oidc-bridge` repo (preserved through 11c PR #48) already work for the small number of self-host operators. | ⬜ deferred |
+| **M5** | **sdk-example dog-food on cloud (launch gate)** | Canary tenant 31146 becomes the production target for sdk-example. Replaces the M5 launch gate from the 2026-05-01 spec. Gates on 12c. | ⬜ planned |
 
-Phase numbering uses `c` suffix to distinguish from the original plan
-phases 9–11 (which are superseded).
+Phase numbering uses `c` suffix where it's still meaningful. The originally-
+planned 13c (dual-cloud) and 14c (Vultr decommission) numbers are retired —
+both fold into 11c. The Rotation and Self-host phases are kept named (not
+numbered) so the umbrella TODO and the spec stay in sync without a global
+re-numbering exercise.
 
 ## 11. Open questions
 
 These do not block spec acceptance; they block specific later phases.
 
-1. **CF mTLS cert quota silent change** (informs Phase 13c+ scale).
+1. **CF mTLS cert quota silent change** (informs post-launch scale; originally tagged "Phase 13c+").
    Ceiling is 1,000/account per the launch blog post (see §7.2), absent
    from official limits docs. Re-test at 50, 200, and 400 tenants to
    confirm the figure has not changed silently. Submit the limit

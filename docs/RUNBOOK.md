@@ -1,8 +1,12 @@
 # RUNBOOK — oidc-bridge
 
-Operational procedures for the community-operated public instance and
-self-host deployments. Each section is self-contained — read top-to-bottom for
-the procedure you're running.
+Operational procedures for self-host deployments of the bridge.
+Each section is self-contained — read top-to-bottom for the procedure you're
+running.
+
+> The community public instance at `oidc-bridge.aitc.dev` runs on Cloudflare
+> Workers from a separate repo (`oidc-bridge-cloud`); its operational
+> procedures are not covered here.
 
 ## First-time setup
 
@@ -21,8 +25,8 @@ TTL: 5 minutes; max observed: 1 hour).
    ```bash
    node -e 'import("node:crypto").then(({generateKeyPairSync})=>{const {privateKey}=generateKeyPairSync("rsa",{modulusLength:2048});process.stdout.write(privateKey.export({format:"pem",type:"pkcs8"}).toString())})' > new-key.pem
    ```
-2. Set the new key as `OIDC_SIGNING_KEY_K2_PEM` (the deploy workflow already
-   knows about K1 and K2 slots — see `.github/workflows/deploy.yml`). On
+2. Set the new key as `OIDC_SIGNING_KEY_K2_PEM` in your secret store
+   (env vars, `.env` file, or whatever your self-host setup uses). On
    second and later rotations, write the new key into whichever slot was
    just retired — see step 6's slot-swap convention. Pick a kid value for
    `OIDC_ACTIVE_KID` later. Convention: short stable slot names for env
@@ -42,9 +46,9 @@ TTL: 5 minutes; max observed: 1 hour).
    becomes the home for the next new key.
 
 Need more than two overlapping keys at once? Add an `OIDC_SIGNING_KEY_K3_PEM`
-secret AND extend the `env:` + `emit` blocks in `.github/workflows/deploy.yml`
-to include it. Leave it out of the missing-check loop — extra slots stay
-optional so deploys succeed when only K1+K2 are set.
+secret in your environment alongside `K1` and `K2`. The bridge reads any
+`OIDC_SIGNING_KEY_K<N>_PEM` slot it finds; only the active kid signs. Extra
+slots stay optional, so existing deploys keep working when only K1+K2 are set.
 
 ## Adding a confidential client (Edge Function operator)
 

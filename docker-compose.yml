@@ -1,8 +1,7 @@
 # Production docker-compose stack for self-hosting oidc-bridge.
 #
-# Designed for the community Vultr Seoul (ICN) instance, but works on any
-# Docker host. Caddy terminates TLS and reverse-proxies to the app on the
-# internal network — port 8080 is NOT published to the host.
+# Works on any Docker host. Caddy terminates TLS and reverse-proxies to the
+# app on the internal network — port 8080 is NOT published to the host.
 #
 # Usage:
 #   1. Copy .env.example to .env and fill in values.
@@ -10,8 +9,8 @@
 #   3. Point your domain's A record at this host's public IP.
 #   4. docker compose up -d
 #
-# CI/CD updates the `latest` tag and the deploy workflow runs
-# `docker compose pull && docker compose up -d` over SSH.
+# Image tags published from main: `:latest` and `:sha-<commit>`. Roll out
+# updates with `docker compose pull && docker compose up -d`.
 
 services:
   app:

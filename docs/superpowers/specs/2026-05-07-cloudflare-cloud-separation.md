@@ -542,14 +542,16 @@ plan replaces 9–11:
 | 09c | Runtime abstraction | `MtlsClient` + `Storage` interfaces; Node + Workers implementations behind the same Hono app | ✅ merged ([oidc-bridge#44](https://github.com/apps-in-toss-community/oidc-bridge/pull/44)) |
 | 10c | `oidc-bridge-cloud` private repo skeleton | Dispatcher Worker, admin endpoints stub, CF API client, tenant registry D1 | ✅ merged ([oidc-bridge-cloud#1](https://github.com/apps-in-toss-community/oidc-bridge-cloud/pull/1)) |
 | 11c | Tenant Worker template + DNS cutover + Vultr decommission | One-Worker-per-tenant deployment automation; first canary tenant (`aitc-sdk-example` 31146) running on cloud; `oidc-bridge.aitc.dev` cutover to dispatcher Worker; Vultr Seoul VPS destroyed. **Folds the originally-separate Phase 13c (dual-cloud cutover) and Phase 14c (Vultr decommission) into a single phase** because the Vultr public instance had zero real users — dual-cloud staging added drag without reducing risk. | ✅ merged ([oidc-bridge-cloud#3–#10](https://github.com/apps-in-toss-community/oidc-bridge-cloud/pull/3), [oidc-bridge#48](https://github.com/apps-in-toss-community/oidc-bridge/pull/48)) |
-| 12c | `MtlsClient` binding + `/oidc/token` GA | Workers `MtlsClient` adapter using the CF `mtls_certificate` Fetcher binding; vendored OIDC token pipeline + Toss adapter wired into the tenant template; per-tenant D1 schema (`apps`, `audit_log`, `revoked_tokens`); the 501 stubs at `/oidc/token`/`/oidc/userinfo`/`/oidc/revoke` replaced with real handlers; sandbox e2e against Toss using the canary's bound cert. | ⬜ in-flight |
-| Rotation | Rotation state machine + admin UI | `/admin/tenants/:id/rotate` end-to-end with the §5 state machine; soak/rollback UX. **Originally numbered 12c**; renamed to a non-numbered later phase because 12c was retargeted to `/oidc/token` GA (the launch-blocking work) once 11c absorbed 13c/14c. | ⬜ planned |
-| Self-host | Self-host generic Docker | Stripped-down Phase 9 redux: image + compose example, no Vultr automation. **Originally numbered 13c**; deferred behind Rotation because the existing self-host artifacts in `oidc-bridge` repo (preserved through 11c PR #48) already work for the small number of self-host operators. | ⬜ deferred |
+| 12c | `MtlsClient` binding + `/oidc/token` GA | Workers `MtlsClient` adapter using the CF `mtls_certificate` Fetcher binding; vendored OIDC token pipeline + Toss adapter wired into the tenant template; per-tenant D1 schema (`apps`, `audit_log`, `revoked_tokens`); the 501 stubs at `/oidc/token`/`/oidc/userinfo`/`/oidc/revoke` replaced with real handlers; sandbox e2e against Toss using the canary's bound cert. | ✅ merged ([oidc-bridge-cloud#11–#13](https://github.com/apps-in-toss-community/oidc-bridge-cloud/pull/11), [#14](https://github.com/apps-in-toss-community/oidc-bridge-cloud/pull/14)) |
+| 13c | Secret store + apps registration + rotation FSM + lapsed cleanup | Four sub-deliverables that close the operational gaps surfaced by the 12c PR-C post-merge re-verification: (PR-A) per-tenant CF Workers Secrets Store binding so `MASTER_KEY_1_HEX`/`OIDC_SIGNING_KEY_K1_PEM` survive cert/upload re-bind without churn; (PR-B) `POST /admin/tenants/:id/apps` client registration + `Storage.insertApp` + workspaces seed-on-first-app, unblocking `/oidc/token` past the `invalid_client` short-circuit; (PR-C) `/admin/tenants/:id/rotate` end-to-end for the mTLS cert binding (idle→overlap→soak→cleanup→idle, cert-only — signing-key K1→K2 rotation deferred); (PR-D) Wrangler-cron lapsed-ownership sweep transitioning `pending → lapsed` after a 7-day grace. **Originally placed as a non-numbered "Rotation" phase** with rotation FSM only; expanded and renumbered after the 12c retro post-merge addendum (2026-05-10) found three additional gaps. | ⬜ planned |
+| Self-host | Self-host generic Docker | Stripped-down Phase 9 redux: image + compose example, no Vultr automation. **Originally numbered 13c**; deferred behind 13c because the existing self-host artifacts in `oidc-bridge` repo (preserved through 11c PR #48) already work for the small number of self-host operators. | ⬜ deferred |
 | **M5** | **sdk-example dog-food on cloud (launch gate)** | Canary tenant 31146 becomes the production target for sdk-example. Replaces the M5 launch gate from the 2026-05-01 spec. Gates on 12c. | ⬜ planned |
 
 Phase numbering uses `c` suffix where it's still meaningful. The originally-
 planned 13c (dual-cloud) and 14c (Vultr decommission) numbers are retired —
-both fold into 11c. The Rotation and Self-host phases are kept named (not
+both fold into 11c. The 13c slot is now reused for the operational-stabilization
+phase described above (the four sub-deliverables that the 12c retro post-merge
+addendum identified as launch-blocking). The Self-host phase is kept named (not
 numbered) so the umbrella TODO and the spec stay in sync without a global
 re-numbering exercise.
 
@@ -576,6 +578,16 @@ These do not block spec acceptance; they block specific later phases.
    New tenant onboarding requires Toss console cert issuance, which is
    manual today. console-cli automates the API call but does not
    automate the human-in-the-loop console session. UX TBD.
+6. **CF Workers Secrets Store account-level opt-in** (blocks Phase 13c PR-A).
+   The Workers Secrets Store (`secret_store` binding type) is gated behind
+   an account-level opt-in beta as of 2026-05. PR-A's first task is to
+   confirm opt-in status on the production account; if the feature is
+   unavailable the secret-store sub-deliverable falls back to keeping
+   `MASTER_KEY_1_HEX`/`OIDC_SIGNING_KEY_K1_PEM` in `secret_text` Worker
+   bindings and gating cert/upload to skip secret regeneration when the
+   bindings already exist. The runbook for canary 31146 backfill (DELETE
+   the existing Worker + re-POST through `provisionTenant`) does not
+   change either way.
 
 ## 12. Acceptance signal
 

@@ -1,4 +1,4 @@
-import type { JWK, KeyLike } from 'jose';
+import type { JWK } from 'jose';
 
 export interface SigningKeyEntry {
   kid: string;
@@ -7,7 +7,7 @@ export interface SigningKeyEntry {
 
 export interface SigningKeyRegistry {
   activeKid: string;
-  activeSigner: KeyLike;
+  activeSigner: CryptoKey;
   jwks(): { keys: JWK[] };
 }
 

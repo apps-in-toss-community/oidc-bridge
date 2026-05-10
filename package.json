@@ -33,7 +33,7 @@
     "@hono/node-server": "^1.13.7",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.10.0",
-    "commander": "^12.1.0",
+    "commander": "^14.0.3",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.18",
     "jose": "^5.10.0",

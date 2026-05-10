@@ -27,8 +27,8 @@ importers:
         specifier: ^4.12.18
         version: 4.12.18
       jose:
-        specifier: ^5.10.0
-        version: 5.10.0
+        specifier: ^6.2.3
+        version: 6.2.3
       nanoid:
         specifier: ^5.1.11
         version: 5.1.11
@@ -2182,8 +2182,8 @@ packages:
     resolution: {integrity: sha512-6B3tLtFqtQS4ekarvLVMZ+X+VlvQekbe4taUkf/rhVO3d/h0M2rfARm/pXLcPEsjjMsFgrFgSrhQIxcSVrBz8w==}
     engines: {node: '>=18'}
 
-  jose@5.10.0:
-    resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
+  jose@6.2.3:
+    resolution: {integrity: sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -4801,7 +4801,7 @@ snapshots:
   isexe@3.1.5:
     optional: true
 
-  jose@5.10.0: {}
+  jose@6.2.3: {}
 
   joycon@3.1.1: {}
 

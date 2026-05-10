@@ -22,11 +22,11 @@ const CreateAppSchema = z.object({
   displayTitle: z.string().min(1),
   mtlsCertPem: z.string().min(1),
   mtlsKeyPem: z.string().min(1),
-  allowedOrigins: z.array(z.string().url()).default([]),
+  allowedOrigins: z.array(z.url()).default([]),
 });
 const UpdateAppSchema = z.object({
   displayTitle: z.string().min(1).optional(),
-  allowedOrigins: z.array(z.string().url()).optional(),
+  allowedOrigins: z.array(z.url()).optional(),
 });
 const ToggleRawTokensSchema = z.object({ enabled: z.boolean() });
 const CreateApiTokenSchema = z.object({

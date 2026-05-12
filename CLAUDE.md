@@ -248,6 +248,7 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 - Phase 5: [`docs/superpowers/retros/2026-05-03-phase-05-retro.md`](docs/superpowers/retros/2026-05-03-phase-05-retro.md)
 - Phase 6: [`docs/superpowers/retros/2026-05-03-phase-06-retro.md`](docs/superpowers/retros/2026-05-03-phase-06-retro.md)
 - Phase 7: [`docs/superpowers/retros/2026-05-05-phase-07-retro.md`](docs/superpowers/retros/2026-05-05-phase-07-retro.md)
+- Phase 8: [`docs/superpowers/retros/2026-05-06-phase-08-retro.md`](docs/superpowers/retros/2026-05-06-phase-08-retro.md)
 
 ### Runtime abstraction (Phase 09c)
 

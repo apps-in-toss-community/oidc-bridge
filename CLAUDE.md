@@ -11,7 +11,7 @@
 
 대신 "커뮤니티(community)" 같은 자연스러운 표현. 의심스러우면 빼라.
 
-**톤 가이드** (방어적 disclaimer 금지): README 푸터에 한 줄로 1회만 명시 — `Community project. Not affiliated with Toss.` (이 repo는 영어 primary). 헤더 직후의 `>` blockquote 박스, ⚠️ 아이콘, 굵은 글씨, `unofficial`/`비공식` 같은 강한 라벨, 영/한 병기는 모두 쓰지 않는다. 운영 단서(공용 인스턴스 `oidc-bridge.aitc.dev`는 rate-limited, best-effort, SLA 없음, security-sensitive workloads는 self-host 권장)는 disclaimer에 묶지 않고 README의 "Self-host" 섹션에 운영 정보로 둔다.
+**톤 가이드** (방어적 disclaimer 금지): README 푸터에 한 줄로 1회만 명시 — `Community open-source project.` (이 repo는 영어 primary). "제휴 아님" 같은 방어적 표현 대신 "커뮤니티 오픈소스" 정체성만 자연스럽게. 헤더 직후의 `>` blockquote 박스, ⚠️ 아이콘, 굵은 글씨, `unofficial`/`비공식` 같은 강한 라벨, 영/한 병기는 모두 쓰지 않는다. 운영 단서(공용 인스턴스 `oidc-bridge.aitc.dev`는 rate-limited, best-effort, SLA 없음, security-sensitive workloads는 self-host 권장)는 disclaimer에 묶지 않고 README의 "Self-host" 섹션에 운영 정보로 둔다.
 
 이슈/제안은 GitHub Issues로.
 

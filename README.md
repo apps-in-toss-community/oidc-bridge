@@ -1,37 +1,40 @@
 # oidc-bridge
 
-> Community-run OIDC adapter that bridges **Toss login** into BaaS platforms (Supabase, Firebase, Auth0, Keycloak, …).
+**한국어** · [English](./README.en.md)
 
-## What it does
+> 토스 로그인을 BaaS 플랫폼(Supabase, Firebase, Auth0, Keycloak 등)으로 연결해주는 커뮤니티 OIDC 어댑터.
 
-A mini-app developer registers their app with the Bridge and gets a `client_id` + an `iss = https://oidc-bridge.aitc.dev` OIDC issuer URL. The mini-app calls `appLogin()` to get a Toss `authorizationCode`, exchanges it at `POST /oidc/token` for an OIDC `id_token`, and signs into Supabase via `signInWithIdToken`. No backend code required (zero-code mode).
+## 동작 방식
 
-For Edge Function / Cloud Function operators that want server authority, the same `/oidc/token` endpoint accepts `client_secret` authentication (confidential-client mode).
+미니앱 개발자가 Bridge에 앱을 등록하면 `client_id`와 `iss = https://oidc-bridge.aitc.dev` OIDC 발급자 URL을 받습니다. 미니앱은 `appLogin()`을 호출해 토스 `authorizationCode`를 받고, `POST /oidc/token`에서 OIDC `id_token`으로 교환한 뒤 `signInWithIdToken`으로 Supabase에 로그인합니다. 별도 백엔드 코드가 필요 없습니다(zero-code 모드).
 
-## Status
+서버 권한이 필요한 Edge Function / Cloud Function 운영자는 동일한 `/oidc/token` 엔드포인트에서 `client_secret` 인증(confidential-client 모드)을 사용할 수 있습니다.
 
-Zero-code mode is under active implementation as of May 2026. Phases 0–2 are merged to `main`; Phase 3 (the `POST /oidc/token` endpoint) is next. See:
+## 상태
 
-- [Design spec](docs/superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md) — full architecture, components, security model.
-- [Implementation index](docs/superpowers/plans/2026-05-01-zero-code-mode-index.md) — phase-by-phase plan.
-- [`MIGRATION.md`](./MIGRATION.md) — breaking change from M0.
+2026년 5월 기준 zero-code 모드가 활발히 구현 중입니다. Phase 0–8 및 09c가 `main`에 머지되었으며, 이후 cloud-side 작업은 별도 private repo `oidc-bridge-cloud`에서 진행됩니다. 참조:
 
-| Phase | What landed | PR |
+- [설계 스펙](docs/superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md) — 전체 아키텍처, 컴포넌트, 보안 모델.
+- [구현 인덱스](docs/superpowers/plans/2026-05-01-zero-code-mode-index.md) — 단계별 계획.
+- [`MIGRATION.md`](./MIGRATION.md) — M0 이후 브레이킹 체인지.
+
+| Phase | 내용 | PR |
 |---|---|---|
-| 0 | Pino-logging Hono app, `/healthz`, build/lint/test pipeline. Removes legacy `/verify`. | [#19](https://github.com/apps-in-toss-community/oidc-bridge/pull/19) |
-| 1 | 7-table schema (pg + sqlite), `MasterKeyProvider`, HKDF, 6h key cache. | [#19](https://github.com/apps-in-toss-community/oidc-bridge/pull/19) |
-| 2 | Admin REST + CLI (workspaces, apps, api_tokens), bcrypt secrets, mTLS column encryption, ownership state machine, audit log. | [#20](https://github.com/apps-in-toss-community/oidc-bridge/pull/20), [#21](https://github.com/apps-in-toss-community/oidc-bridge/pull/21) |
-| 3 | `POST /oidc/token` (public client) + JWKS + discovery, against mocked Toss. | _next_ |
-| 4–11 | userinfo + revoke, real Toss mTLS, admin sessions, CLI bootstrap, observability, self-host artifacts, GCP Cloud Run, sdk-example dog-fooding. | _planned_ |
+| 0 | Pino 로깅 Hono 앱, `/healthz`, 빌드/린트/테스트 파이프라인. 레거시 `/verify` 제거. | [#19](https://github.com/apps-in-toss-community/oidc-bridge/pull/19) |
+| 1 | 7-테이블 스키마(pg + sqlite), `MasterKeyProvider`, HKDF, 6h 키 캐시. | [#19](https://github.com/apps-in-toss-community/oidc-bridge/pull/19) |
+| 2 | Admin REST + CLI(workspaces, apps, api_tokens), bcrypt secrets, mTLS 컬럼 암호화, ownership state machine, audit log. | [#20](https://github.com/apps-in-toss-community/oidc-bridge/pull/20), [#21](https://github.com/apps-in-toss-community/oidc-bridge/pull/21) |
+| 3 | `POST /oidc/token`(public client) + JWKS + discovery, mocked Toss. | ✅ main |
+| 4–09c | userinfo + revoke, real Toss mTLS, admin sessions, CLI bootstrap, observability, runtime abstraction(Workers-ready). | ✅ main |
+| 10c+ | tenant template, DNS cutover, MtlsClient binding, `/oidc/token` GA. | oidc-bridge-cloud |
 
 ## Self-host
 
-The public instance at `oidc-bridge.aitc.dev` is rate-limited and best-effort with no SLA; security-sensitive workloads should self-host. Self-hosting docs (`SELF_HOSTING.md`) ship in Phase 9 of the implementation plan. Until then, this repo is not yet runnable as a multi-tenant production service.
+`oidc-bridge.aitc.dev` 공용 인스턴스는 rate-limited이며 SLA 없는 best-effort입니다. 보안이 민감한 워크로드는 self-host를 권장합니다. Self-hosting 문서(`SELF_HOSTING.md`)는 구현 계획 Phase 9에서 제공됩니다. 현재 이 repo는 멀티테넌트 프로덕션 서비스로 바로 운영하기에는 아직 준비 단계입니다.
 
-## License
+## 라이선스
 
-BSD-3-Clause. See `LICENSE`.
+BSD-3-Clause. `LICENSE` 참조.
 
 ---
 
-Community open-source project.
+커뮤니티 오픈소스 프로젝트입니다.

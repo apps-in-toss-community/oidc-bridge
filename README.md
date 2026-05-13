@@ -2,8 +2,6 @@
 
 > Community-run OIDC adapter that bridges **Toss login** into BaaS platforms (Supabase, Firebase, Auth0, Keycloak, …).
 
-This is an **unofficial** community project — not affiliated with or endorsed by Toss. The public instance at `oidc-bridge.aitc.dev` is rate-limited and best-effort; security-sensitive workloads should self-host.
-
 ## What it does
 
 A mini-app developer registers their app with the Bridge and gets a `client_id` + an `iss = https://oidc-bridge.aitc.dev` OIDC issuer URL. The mini-app calls `appLogin()` to get a Toss `authorizationCode`, exchanges it at `POST /oidc/token` for an OIDC `id_token`, and signs into Supabase via `signInWithIdToken`. No backend code required (zero-code mode).
@@ -28,8 +26,12 @@ Zero-code mode is under active implementation as of May 2026. Phases 0–2 are m
 
 ## Self-host
 
-Self-hosting docs (`SELF_HOSTING.md`) ship in Phase 9 of the implementation plan. Until then, this repo is not yet runnable as a multi-tenant production service.
+The public instance at `oidc-bridge.aitc.dev` is rate-limited and best-effort with no SLA; security-sensitive workloads should self-host. Self-hosting docs (`SELF_HOSTING.md`) ship in Phase 9 of the implementation plan. Until then, this repo is not yet runnable as a multi-tenant production service.
 
 ## License
 
 BSD-3-Clause. See `LICENSE`.
+
+---
+
+Community open-source project.

@@ -2,14 +2,16 @@
 
 ## 프로젝트 성격
 
-**비공식(unofficial) 커뮤니티 프로젝트**. 토스/앱인토스 팀과 제휴·후원·인증 관계 없음. 공용 인스턴스(`oidc-bridge.aitc.dev`)는 **rate-limited, best-effort, community-operated** — SLA 없음.
+`apps-in-toss-community`는 토스/앱인토스 팀과 제휴 관계가 없는 커뮤니티 프로젝트다.
 
 사용자에게 보이는 모든 산출물(README, UI 카피, 패키지 설명, 커밋/PR 메시지, 코드 주석 등)에서 다음 표현 **금지**:
 
 - "공식(official)", "공식 도구/플러그인", "토스가 제공하는", "앱인토스에서 만든", "powered by Toss"
 - 토스와의 제휴/후원/인증을 암시하는 모든 표현
 
-대신 "커뮤니티(community)", "오픈소스", "비공식(unofficial)". 의심스러우면 빼라.
+대신 "커뮤니티(community)" 같은 자연스러운 표현. 의심스러우면 빼라.
+
+**톤 가이드** (방어적 disclaimer 금지): README 푸터에 한 줄로 1회만 명시 — `Community project. Not affiliated with Toss.` (이 repo는 영어 primary). 헤더 직후의 `>` blockquote 박스, ⚠️ 아이콘, 굵은 글씨, `unofficial`/`비공식` 같은 강한 라벨, 영/한 병기는 모두 쓰지 않는다. 운영 단서(공용 인스턴스 `oidc-bridge.aitc.dev`는 rate-limited, best-effort, SLA 없음, security-sensitive workloads는 self-host 권장)는 disclaimer에 묶지 않고 README의 "Self-host" 섹션에 운영 정보로 둔다.
 
 이슈/제안은 GitHub Issues로.
 

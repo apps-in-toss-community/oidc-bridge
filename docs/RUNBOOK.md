@@ -58,7 +58,7 @@ the `Origin` header for auth.
 
 1. Issue a secret via the admin CLI:
    ```bash
-   oidc-bridge app rotate-secret --app-id app_abc
+   oidc-bridge app rotate-secret --id app_abc
    ```
    The plaintext is shown **once**. Store it in your operator's secret store
    (Supabase Edge Function secret, GCP Secret Manager, etc.).
@@ -76,10 +76,9 @@ the `Origin` header for auth.
    });
    ```
 3. Rotation overlap: `app rotate-secret` adds a new hash and keeps the old
-   one. Both are accepted until you call:
-   ```bash
-   oidc-bridge app rotate-secret --app-id app_abc --drop-previous
-   ```
+   one active alongside the new one. Dropping old hashes (a `--drop-previous`
+   style flag) is planned but not yet implemented — for now, restart the
+   bridge after rotating to expire in-memory state.
 
 Confidential clients can have `allowed_origins` empty — Origin is ignored
 when an `Authorization: Basic` header is present.
@@ -90,7 +89,7 @@ Raw-tokens (`GET /oidc/raw-tokens`) returns the underlying Toss access token.
 Default-off; opt in per app:
 
 ```bash
-oidc-bridge app raw-tokens --app-id app_abc --enable
+oidc-bridge app toggle-raw-tokens --id app_abc --enabled true
 ```
 
 The endpoint never returns the refresh token. To refresh, the operator calls
@@ -98,7 +97,7 @@ The endpoint never returns the refresh token. To refresh, the operator calls
 
 Disable:
 ```bash
-oidc-bridge app raw-tokens --app-id app_abc --disable
+oidc-bridge app toggle-raw-tokens --id app_abc --enabled false
 ```
 
 When disabled, `GET /oidc/raw-tokens` returns 404 — the route looks absent for

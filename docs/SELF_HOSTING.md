@@ -169,12 +169,13 @@ Once the server is running, register a Toss mini-app:
 ```bash
 export ADMIN_API_TOKEN=tok_<plaintext from step 2>
 
-oidc-bridge app register \
+oidc-bridge app create \
   --workspace-id ws_<from step 2> \
-  --name my-mini-app \
-  --mtls-cert ./local/sandbox.cert.pem \
-  --mtls-key ./local/sandbox.key.pem \
-  --allowed-origins https://my-mini-app.example.com
+  --app-id-toss <toss-mini-app-id> \
+  --title my-mini-app \
+  --cert ./local/sandbox.cert.pem \
+  --key ./local/sandbox.key.pem \
+  --allowed-origin https://my-mini-app.example.com
 ```
 
 The mTLS PEMs are sealed inside the `apps` row using a key derived from

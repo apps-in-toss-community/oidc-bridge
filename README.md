@@ -29,7 +29,7 @@
 
 ## Self-host
 
-`oidc-bridge.aitc.dev` 공용 인스턴스는 rate-limited이며 SLA 없는 best-effort입니다. 보안이 민감한 워크로드는 self-host를 권장합니다. Self-hosting 문서(`SELF_HOSTING.md`)는 구현 계획 Phase 9에서 제공됩니다. 현재 이 repo는 멀티테넌트 프로덕션 서비스로 바로 운영하기에는 아직 준비 단계입니다.
+`oidc-bridge.aitc.dev` 공용 인스턴스는 rate-limited이며 SLA 없는 best-effort입니다. 보안이 민감한 워크로드는 self-host를 권장합니다. [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md)에서 `bootstrap` + `doctor` 기반 셋업 가이드를 확인하세요.
 
 ## 라이선스
 

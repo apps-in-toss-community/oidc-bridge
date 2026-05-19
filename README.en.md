@@ -29,7 +29,7 @@ Zero-code mode is under active implementation as of May 2026. Phases 0–8 and 0
 
 ## Self-host
 
-The public instance at `oidc-bridge.aitc.dev` is rate-limited and best-effort with no SLA; security-sensitive workloads should self-host. Self-hosting docs (`SELF_HOSTING.md`) ship in Phase 9 of the implementation plan. Until then, this repo is not yet runnable as a multi-tenant production service.
+The public instance at `oidc-bridge.aitc.dev` is rate-limited and best-effort with no SLA; security-sensitive workloads should self-host. See [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md) for a `bootstrap` + `doctor` setup walkthrough.
 
 ## License
 

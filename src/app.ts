@@ -53,9 +53,9 @@ export interface CreateAppOptions {
     revocationStore: RevocationStore;
     now?: () => number;
   };
-  // Phase 6 placeholder. Mounted only when the env flag is on AND a service
-  // is supplied at bootstrap. Default-off: routes are not registered →
-  // Hono returns 404, indistinguishable from "endpoint does not exist."
+  // Mounted only when the env flag is on AND a service is supplied at
+  // bootstrap. Default-off: routes are not registered → Hono returns 404,
+  // indistinguishable from "endpoint does not exist."
   session?: {
     service: SessionService;
   };

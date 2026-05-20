@@ -72,7 +72,7 @@ export interface Storage {
   deleteApp(id: string): Promise<void>;
   countApps(): Promise<number>;
 
-  // User sessions (Phase 6 placeholder; Phase 1 only stubs CRUD)
+  // User sessions — CRUD backing the optional session service.
   createUserSession(input: { id: string; userId: string; expiresAt: Date }): Promise<UserSession>;
   getUserSession(id: string): Promise<UserSession | null>;
   deleteUserSession(id: string): Promise<void>;

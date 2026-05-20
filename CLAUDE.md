@@ -47,11 +47,11 @@
 
 영속 상태는 RDB의 7개 테이블 — `users`, `api_tokens`, `workspaces`, `apps`, `user_sessions`, `master_keys`, `audit_log`. mTLS cert/key는 `apps` 컬럼에 per-app sealing key로 봉인 저장, `client_secret`은 bcrypt hash 배열. 그 외 런타임 상태는 in-memory(rate-limit 카운터 등). Bridge가 발급하는 access/refresh token은 **sealed wrapper** — `(app_id, toss_AT, toss_RT, exp)`을 per-app HKDF-derived 키로 AEAD(AES-256-GCM)로 봉인한 opaque string (`ait_<base64url>`). 모든 인스턴스가 같은 master key를 공유하므로 sticky session 없이 unwrap 가능 (cloud invariant).
 
-배포 산출물: 단일 Docker 이미지 (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` default `8080`, `/healthz` → `200 ok`. 공용 인스턴스는 GCP Cloud Run + Cloud SQL pg(Phase 10), self-host는 docker-compose + SQLite/PG.
+배포 산출물: 단일 Docker 이미지 (`node:24-alpine`, multi-stage). entrypoint `node dist/server.mjs`, `PORT` default `8080`, `/healthz` → `200 ok`. self-host는 docker-compose + SQLite/PG. 공용 인스턴스(`oidc-bridge.aitc.dev`)는 이 Docker 경로가 아니라 Cloudflare Workers + D1로 운영된다 — 짝 repo [`oidc-bridge-cloud`](https://github.com/apps-in-toss-community/oidc-bridge-cloud) (2026-05-08 cutover, 이전 Vultr/GCP 경로 폐기).
 
 ### Storage
 
-Postgres-first + SQLite fallback. **공용 인스턴스는 Postgres**(Cloud SQL), **self-host single-app**은 SQLite로 충분(≤1 app 가정). 둘 다 Drizzle ORM(`drizzle-orm` 0.45.x) + drizzle-kit migration. 스키마는 dialect별로 hand-mirrored (`schema.pg.ts` / `schema.sqlite.ts`) — Drizzle은 cross-dialect 헬퍼를 제공하지 않으니 storage-conformance 테스트(`runStorageConformance`)가 두 driver의 동일 동작을 보장한다.
+Postgres-first + SQLite fallback (이 self-host code base 기준). **self-host multi-app**은 Postgres, **self-host single-app**은 SQLite로 충분(≤1 app 가정). 둘 다 Drizzle ORM(`drizzle-orm` 0.45.x) + drizzle-kit migration. (공용 인스턴스는 이 storage 레이어가 아니라 `oidc-bridge-cloud`의 D1 registry를 쓴다.) 스키마는 dialect별로 hand-mirrored (`schema.pg.ts` / `schema.sqlite.ts`) — Drizzle은 cross-dialect 헬퍼를 제공하지 않으니 storage-conformance 테스트(`runStorageConformance`)가 두 driver의 동일 동작을 보장한다.
 
 `STORAGE` env로 driver 선택 (`pg`|`sqlite`). PG는 `DATABASE_URL`, SQLite는 `SQLITE_PATH`.
 
@@ -60,7 +60,7 @@ Postgres-first + SQLite fallback. **공용 인스턴스는 Postgres**(Cloud SQL)
 DB row는 metadata만. 실제 key bytes는 `MasterKeyProvider`가 외부에서 fetch:
 - `env` (`MASTER_KEY_<version>_HEX`) — self-host default
 - `file` (`${MASTER_KEY_DIR}/v<version>.key`, perm 600)
-- `gcpsm` (`oidc-bridge-master-key-v<version>`) — 공용 인스턴스 default, lazy import
+- `gcpsm` (`oidc-bridge-master-key-v<version>`) — GCP Secret Manager self-host 옵션, lazy import
 
 `MASTER_KEY_PROVIDER` env로 선택. 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 `cli master-key rotate` — old version retained until 모든 `apps.sealing_key_version`이 새로 migrate, lazy rewrap.
 

@@ -264,7 +264,7 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 
 ### pnpm 10 + native modules
 
-pnpm 10은 native module의 install/build script를 기본 차단(security). better-sqlite3는 alpine/musl prebuild를 ship 안 하므로 fallback compile이 필요한데, 그 compile 자체가 차단된다. 해결: `package.json`의 `pnpm.onlyBuiltDependencies: ["better-sqlite3"]`로 명시 허가. 새 native dep 추가 시 같은 배열에 추가.
+pnpm 10은 native module의 install/build script를 기본 차단(security). better-sqlite3는 alpine/musl prebuild를 ship 안 하므로 fallback compile이 필요한데, 그 compile 자체가 차단된다. 해결: `pnpm-workspace.yaml`의 `onlyBuiltDependencies: [better-sqlite3]`로 명시 허가. 새 native dep 추가 시 같은 배열에 추가. (pnpm 10.33부터 이 설정은 `package.json`의 `pnpm` 필드가 아니라 `pnpm-workspace.yaml`에서 읽힌다.)
 
 ### Alpine builder toolchain
 

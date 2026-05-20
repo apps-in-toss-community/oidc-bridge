@@ -263,7 +263,8 @@ the cookie on the client.
 - The pino redact list (set up in earlier phases) covers all known
   secret-shaped fields.
 - Logs go to stdout. In `docker compose` deployments, `docker compose
-  logs -f bridge` shows them. In Cloud Run, Cloud Logging picks them up.
+  logs -f bridge` shows them. Pipe stdout to whatever log aggregator your
+  host uses (journald, a sidecar collector, etc.).
 - Inbound `X-Request-Id` headers are honored when they match
   `[A-Za-z0-9_.-]{1,128}`; otherwise a fresh UUID is generated. The id
   is echoed back in the response header and on the log line.

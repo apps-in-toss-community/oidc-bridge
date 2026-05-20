@@ -241,7 +241,7 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 
 ## Status
 
-현재 main: zero-code mode Phase 0–8 + 09c 머지됨. 본 repo의 phase plan은 09c에서 정지 — 이후 cloud-side 작업은 `oidc-bridge-cloud` repo에서 진행된다 (위 cloud separation 표). 본 repo는 self-host 코드 베이스 + cloud Worker가 vendor-source로 가져가는 ports/adapters 정본 역할. 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 공용 인스턴스(`oidc-bridge.aitc.dev`)는 2026-05-08부로 cloud repo의 Cloudflare Workers로 cutover되어 본 repo의 Vultr deploy 경로는 폐기됨 ([#48](https://github.com/apps-in-toss-community/oidc-bridge/pull/48)). 전체 로드맵은 [landing page](https://apps-in-toss-community.github.io/) 참고.
+현재 main: zero-code mode Phase 0–8 + 09c 머지됨. 본 repo의 phase plan은 09c에서 정지 — 이후 cloud-side 작업은 `oidc-bridge-cloud` repo에서 진행된다 (위 cloud separation 표). 본 repo는 self-host 코드 베이스 + cloud Worker가 vendor-source로 가져가는 ports/adapters 정본 역할. 옛 `POST /verify` (Basic Auth)는 Phase 0에서 제거됨. 공용 인스턴스(`oidc-bridge.aitc.dev`)는 2026-05-08부로 cloud repo의 Cloudflare Workers로 cutover되어 본 repo의 Vultr deploy 경로는 폐기됨 ([#48](https://github.com/apps-in-toss-community/oidc-bridge/pull/48)). 전체 로드맵은 [landing page](https://aitc.dev/) 참고.
 
 ## Standing decisions (Phase 1, 3, 4, 5, 6, 7, 09c에서 굳어진 것)
 

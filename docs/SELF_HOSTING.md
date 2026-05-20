@@ -71,7 +71,11 @@ Add to your bridge .env:
   OIDC_ISSUER=https://oidc-bridge.example.com
   OIDC_ACTIVE_KID=k1
   OIDC_SIGNING_KEY_K1_PEM="$(cat your-signing-key.pem)"
-  API_TOKEN=tok_…
+
+Pass ADMIN_API_TOKEN as --token when running admin CLI commands:
+
+  oidc-bridge app create --api-url https://your-bridge.example.com \
+    --token <ADMIN_API_TOKEN above> ...
 
 Next: run `oidc-bridge doctor` to verify the install.
 ```
@@ -110,8 +114,12 @@ OIDC_SIGNING_KEY_K1_PEM="-----BEGIN PRIVATE KEY-----
 …
 -----END PRIVATE KEY-----
 "
-API_TOKEN=tok_<plaintext from bootstrap>
 ```
+
+The `ADMIN_API_TOKEN` from bootstrap is the credential for admin CLI commands
+(`--token`). It is not a server env var — the server authenticates admin
+requests against the `api_tokens` DB table (bcrypt). Keep the plaintext in
+your secret store for use with the CLI.
 
 ## 5. Verify with `doctor`
 
@@ -167,15 +175,15 @@ terminate TLS itself.
 Once the server is running, register a Toss mini-app:
 
 ```bash
-export ADMIN_API_TOKEN=tok_<plaintext from step 2>
-
 oidc-bridge app create \
   --workspace-id ws_<from step 2> \
   --app-id-toss <toss-mini-app-id> \
   --title my-mini-app \
   --cert ./local/sandbox.cert.pem \
   --key ./local/sandbox.key.pem \
-  --allowed-origin https://my-mini-app.example.com
+  --allowed-origin https://my-mini-app.example.com \
+  --api-url https://your-bridge.example.com \
+  --token tok_<ADMIN_API_TOKEN from step 2>
 ```
 
 The mTLS PEMs are sealed inside the `apps` row using a key derived from

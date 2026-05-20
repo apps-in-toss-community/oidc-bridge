@@ -58,7 +58,9 @@ the `Origin` header for auth.
 
 1. Issue a secret via the admin CLI:
    ```bash
-   oidc-bridge app rotate-secret --id app_abc
+   oidc-bridge app rotate-secret --id app_abc \
+     --api-url https://your-bridge.example.com \
+     --token tok_<your admin token>
    ```
    The plaintext is shown **once**. Store it in your operator's secret store
    (Supabase Edge Function secret, GCP Secret Manager, etc.).
@@ -89,7 +91,9 @@ Raw-tokens (`GET /oidc/raw-tokens`) returns the underlying Toss access token.
 Default-off; opt in per app:
 
 ```bash
-oidc-bridge app toggle-raw-tokens --id app_abc --enabled true
+oidc-bridge app toggle-raw-tokens --id app_abc --enabled true \
+  --api-url https://your-bridge.example.com \
+  --token tok_<your admin token>
 ```
 
 The endpoint never returns the refresh token. To refresh, the operator calls
@@ -97,7 +101,9 @@ The endpoint never returns the refresh token. To refresh, the operator calls
 
 Disable:
 ```bash
-oidc-bridge app toggle-raw-tokens --id app_abc --enabled false
+oidc-bridge app toggle-raw-tokens --id app_abc --enabled false \
+  --api-url https://your-bridge.example.com \
+  --token tok_<your admin token>
 ```
 
 When disabled, `GET /oidc/raw-tokens` returns 404 — the route looks absent for

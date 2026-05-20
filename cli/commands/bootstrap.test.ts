@@ -130,8 +130,8 @@ describe('formatBootstrapSummary', () => {
     expect(out).toContain(`ADMIN_API_TOKEN=${summary.apiTokenPlaintext}`);
   });
 
-  it('contains API_TOKEN placeholder (not the plaintext)', () => {
+  it('instructs passing ADMIN_API_TOKEN as --token for CLI commands', () => {
     const out = formatBootstrapSummary(summary, env);
-    expect(out).toContain('API_TOKEN=<paste ADMIN_API_TOKEN above>');
+    expect(out).toContain('--token <ADMIN_API_TOKEN above>');
   });
 });

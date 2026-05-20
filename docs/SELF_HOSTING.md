@@ -26,9 +26,9 @@ pnpm install
 pnpm build
 ```
 
-This produces `dist/server.mjs` (the HTTP server) and `dist/cli.mjs` (the
+This produces `dist/server.mjs` (the HTTP server) and `dist/index.mjs` (the
 admin CLI). The rest of this doc invokes the CLI as `oidc-bridge` —
-substitute `node dist/cli.mjs` if you haven't put the built CLI on your
+substitute `node dist/index.mjs` if you haven't put the built CLI on your
 PATH.
 
 ## 2. Bootstrap

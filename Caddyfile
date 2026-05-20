@@ -13,7 +13,7 @@ oidc-bridge.aitc.dev {
 	encode gzip zstd
 
 	# Caddy automatically forwards X-Forwarded-{For,Proto,Host} to the
-	# upstream. We add X-Real-IP so the bridge's per-IP rate limiter (M3)
+	# upstream. We add X-Real-IP so the bridge's per-IP rate limiter
 	# can pick up the original client address without parsing XFF.
 	reverse_proxy app:8080 {
 		header_up X-Real-IP {remote_host}

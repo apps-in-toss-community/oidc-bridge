@@ -193,8 +193,8 @@ Two files contain everything that is hard to reproduce:
 
 Back up both. If you only back up the DB, you can't decrypt it.
 
-`v1.key` rotation is a Phase 9 / 10 concern (`master-key rotate`); for
-now treat the file as long-lived.
+`v1.key` rotation is handled by `master-key rotate`; for now treat the
+file as long-lived.
 
 ## Troubleshooting
 

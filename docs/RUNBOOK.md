@@ -36,7 +36,7 @@ TTL: 5 minutes; max observed: 1 hour).
 3. Restart the bridge **without** changing `OIDC_ACTIVE_KID` (still `k1`).
    The new K2 key is now in JWKS but not yet signing. Verify:
    ```bash
-   curl -s https://oidc-bridge.aitc.dev/.well-known/jwks.json | jq '.keys[].kid'
+   curl -s https://your-bridge.example.com/.well-known/jwks.json | jq '.keys[].kid'
    ```
 4. Wait at least 6 hours so consumer JWKS caches see the new kid.
 5. Set `OIDC_ACTIVE_KID=k2` and restart. New id_tokens sign with K2.
@@ -193,7 +193,7 @@ entrypoint, the flag alone is a no-op — the route module is mounted only when
 ### Login flow
 
 ```bash
-curl -i -X POST https://oidc-bridge.aitc.dev/admin/login \
+curl -i -X POST https://your-bridge.example.com/admin/login \
   -H 'content-type: application/json' \
   -d '{"email":"a@x.com","password":"hunter2"}'
 # 200 OK
@@ -215,7 +215,7 @@ deployments, a periodic restart (or an external cron calling a future
 ### Logout
 
 ```bash
-curl -i -X POST https://oidc-bridge.aitc.dev/admin/logout \
+curl -i -X POST https://your-bridge.example.com/admin/logout \
   -H 'cookie: __Host-bridge_session=<sid>'
 # 200 OK
 # set-cookie: __Host-bridge_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0

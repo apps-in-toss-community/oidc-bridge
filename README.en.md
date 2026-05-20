@@ -12,7 +12,7 @@ For Edge Function / Cloud Function operators that want server authority, the sam
 
 ## Status
 
-Zero-code mode is under active implementation as of May 2026. Phases 0–8 and 09c are merged to `main`; subsequent cloud-side work continues in a separate private repo `oidc-bridge-cloud`. See:
+As of May 2026, the self-host code base for zero-code mode (Phases 0–8 and 09c) is merged to `main`, and this repo's phase plan is frozen at 09c. Subsequent cloud-side work continues in a separate private repo `oidc-bridge-cloud`. See:
 
 - [Design spec](docs/superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md) — full architecture, components, security model.
 - [Implementation index](docs/superpowers/plans/2026-05-01-zero-code-mode-index.md) — phase-by-phase plan.

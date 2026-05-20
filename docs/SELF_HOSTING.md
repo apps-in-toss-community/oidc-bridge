@@ -201,8 +201,10 @@ Two files contain everything that is hard to reproduce:
 
 Back up both. If you only back up the DB, you can't decrypt it.
 
-`v1.key` rotation is handled by `master-key rotate`; for now treat the
-file as long-lived.
+Key rotation is not yet automated via the CLI. For now treat `v1.key` as
+long-lived. If you ever need to rotate, the manual path is: generate a new
+`v2.key` file in the same directory, then migrate `apps.sealing_key_version`
+rows to reference the new version — there is no one-command shortcut today.
 
 ## Troubleshooting
 

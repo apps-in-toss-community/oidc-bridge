@@ -60,9 +60,8 @@ Postgres-first + SQLite fallback (이 self-host code base 기준). **self-host m
 DB row는 metadata만. 실제 key bytes는 `MasterKeyProvider`가 외부에서 fetch:
 - `env` (`MASTER_KEY_<version>_HEX`) — self-host default
 - `file` (`${MASTER_KEY_DIR}/v<version>.key`, perm 600)
-- `gcpsm` (`oidc-bridge-master-key-v<version>`) — GCP Secret Manager self-host 옵션, lazy import
 
-`MASTER_KEY_PROVIDER` env로 선택. 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 아직 CLI 자동화 안 됨 — 수동으로 새 버전 key를 만든 뒤 `apps.sealing_key_version` row를 migrate (old version은 모두 옮길 때까지 유지, lazy rewrap). 절차는 `docs/SELF_HOSTING.md` "Backups & disaster recovery" 섹션 참조.
+`MASTER_KEY_PROVIDER` env로 선택 (`env`|`file`). 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 아직 CLI 자동화 안 됨 — 수동으로 새 버전 key를 만든 뒤 `apps.sealing_key_version` row를 migrate (old version은 모두 옮길 때까지 유지, lazy rewrap). 절차는 `docs/SELF_HOSTING.md` "Backups & disaster recovery" 섹션 참조.
 
 ### `/oidc/token`이 foundational primitive
 

@@ -33,7 +33,10 @@ function fakeStorage(app: FakeAppRow) {
   } as unknown as Storage;
 }
 
-async function buildHarness(opts: { app: FakeAppRow }) {
+async function buildHarness(opts: {
+  app: FakeAppRow;
+  revocationStore?: ReturnType<typeof createInMemoryRevocationStore>;
+}) {
   const reg = await createSigningKeyRegistry({
     activeKid: 'k1',
     signingKeys: [{ kid: 'k1', pem: genPem() }],
@@ -54,6 +57,7 @@ async function buildHarness(opts: { app: FakeAppRow }) {
       storage: fakeStorage(opts.app),
       tokenService,
       resolveAppSealingKey: async () => sealingKey,
+      revocationStore: opts.revocationStore ?? createInMemoryRevocationStore(),
     }),
   );
   return honoApp;
@@ -145,6 +149,58 @@ describe('POST /oidc/token (refresh_token)', () => {
     const body = (await res.json()) as { access_token: string };
     expect(body.access_token).toMatch(/^ait_/);
     expect(body.access_token).not.toBe(first.access_token);
+  });
+
+  it('refresh with a revoked refresh_token returns 401 invalid_grant', async () => {
+    const revocationStore = createInMemoryRevocationStore();
+    const h = await buildHarness({ app, revocationStore });
+    const firstRes = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    const first = (await firstRes.json()) as { refresh_token: string };
+    await revocationStore.revoke({ appId: 'app_abc', token: first.refresh_token });
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: first.refresh_token,
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_grant');
+  });
+
+  it('refresh grant rejects an access_token (token-type confusion) with 401 invalid_grant', async () => {
+    const h = await buildHarness({ app });
+    const firstRes = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: 'good',
+        client_id: 'app_abc',
+      }),
+    });
+    const first = (await firstRes.json()) as { access_token: string };
+    const res = await h.request('/oidc/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.example.com' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: first.access_token,
+        client_id: 'app_abc',
+      }),
+    });
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_grant');
   });
 
   it('refresh with tampered token returns 401 invalid_grant', async () => {

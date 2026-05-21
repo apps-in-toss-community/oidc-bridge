@@ -66,6 +66,7 @@ export function rawTokensRoute(opts: RawTokensRouteOpts) {
         token,
         resolveKey: () => sealingKey,
         expectedAppId: appId,
+        expectedTokenType: 'access',
       });
     } catch {
       return bearerError(c);

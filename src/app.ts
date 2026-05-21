@@ -130,6 +130,7 @@ export function createApp(opts: CreateAppOptions = {}): Hono {
         storage: opts.oidc.storage,
         tokenService,
         resolveAppSealingKey: opts.oidc.resolveAppSealingKey,
+        revocationStore: opts.oidc.revocationStore,
       }),
     );
     app.route(

@@ -49,6 +49,7 @@ async function makeAt(
       tossRt: 'TOSS_RT_OPAQUE_FIXTURE',
       tossAtExp: 1735689600,
       issuedAt: 1735686000,
+      tokenType: 'access',
     },
   });
 }

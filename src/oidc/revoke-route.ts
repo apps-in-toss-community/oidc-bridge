@@ -59,17 +59,29 @@ export function revokeRoute(opts: RevokeRouteOpts) {
     const appRow = await opts.storage.getApp(appId);
     if (!appRow) return c.body(null, 200);
 
-    let payload: SealedPayload;
+    // A revoke request may carry either an access or a refresh token. Both
+    // wrappers seal the same userKey, so try each accepted type — the AAD now
+    // binds tokenType, so unwrap only succeeds for the matching type.
+    let payload: SealedPayload | null = null;
     try {
       const sealingKey = await opts.resolveAppSealingKey({ appId, sealingKeyVersion: version });
-      payload = await unwrapSealedToken({
-        token,
-        resolveKey: () => sealingKey,
-        expectedAppId: appId,
-      });
+      for (const expectedTokenType of ['access', 'refresh'] as const) {
+        try {
+          payload = await unwrapSealedToken({
+            token,
+            resolveKey: () => sealingKey,
+            expectedAppId: appId,
+            expectedTokenType,
+          });
+          break;
+        } catch {
+          // try the next accepted type
+        }
+      }
     } catch {
       return c.body(null, 200);
     }
+    if (!payload) return c.body(null, 200);
 
     await opts.revocationStore.revoke({ appId, token });
 

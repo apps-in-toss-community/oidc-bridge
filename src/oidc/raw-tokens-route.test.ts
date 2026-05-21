@@ -43,6 +43,7 @@ async function makeAt(app: FakeAppRow): Promise<string> {
       tossRt: 'TOSS_RT_OPAQUE_FIXTURE',
       tossAtExp: 1735690000,
       issuedAt: 1735686000,
+      tokenType: 'access',
     },
   });
 }

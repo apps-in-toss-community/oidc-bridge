@@ -3,6 +3,8 @@ import { concat, fromBase64Url, fromUtf8, toBase64Url, toUtf8 } from '../core/by
 import type { Random } from '../core/random.js';
 import { nodeRandom } from '../runtime/node-random.js';
 
+export type SealedTokenType = 'access' | 'refresh';
+
 export interface SealedPayload {
   appId: string;
   tossUserKey: string;
@@ -10,6 +12,7 @@ export interface SealedPayload {
   tossRt: string;
   tossAtExp: number;
   issuedAt: number;
+  tokenType: SealedTokenType;
 }
 
 export interface WrapInput {
@@ -42,7 +45,12 @@ export async function wrapSealedToken(input: WrapInput): Promise<string> {
   const random = input.random ?? nodeRandom;
   const aeadImpl = input.aead ?? defaultAead;
   const iv = random.bytes(IV_BYTES);
-  const aad = buildAad(input.payload.appId, input.payload.tossUserKey, input.sealingKeyVersion);
+  const aad = buildAad(
+    input.payload.appId,
+    input.payload.tossUserKey,
+    input.sealingKeyVersion,
+    input.payload.tokenType,
+  );
   const plaintext = fromUtf8(JSON.stringify(input.payload));
   const { ciphertext, tag } = await aeadImpl.seal({
     key: input.sealingKey,
@@ -68,13 +76,26 @@ export interface UnwrapInput {
   token: string;
   resolveKey: (sealingKeyVersion: number) => Uint8Array;
   expectedAppId: string;
+  /**
+   * Which token type the caller endpoint accepts. The type is bound into the
+   * AEAD AAD at wrap time, so presenting an access token where a refresh token
+   * is expected (or vice versa) fails GCM verification — preventing token-type
+   * confusion between the access and refresh wrappers.
+   */
+  expectedTokenType: SealedTokenType;
   aead?: Aead;
 }
 
 export async function unwrapSealedToken(input: UnwrapInput): Promise<SealedPayload> {
   const parts = parseSealed(input.token);
   if (parts.appId !== input.expectedAppId) throw new Error('SEALED_TOKEN_TAMPERED');
-  return decryptOrThrow(parts, input.resolveKey, input.expectedAppId, input.aead ?? defaultAead);
+  return decryptOrThrow(
+    parts,
+    input.resolveKey,
+    input.expectedAppId,
+    input.expectedTokenType,
+    input.aead ?? defaultAead,
+  );
 }
 
 export function peekSealedTokenVersion(token: string): number {
@@ -134,11 +155,12 @@ async function decryptOrThrow(
   parts: ParsedSealed,
   resolveKey: (v: number) => Uint8Array,
   expectedAppId: string,
+  expectedTokenType: SealedTokenType,
   aeadImpl: Aead,
 ): Promise<SealedPayload> {
   const key = resolveKey(parts.version);
   if (key.length !== 32) throw new Error('SEALED_TOKEN_BAD_KEY');
-  const aad = buildAad(expectedAppId, parts.userKey, parts.version);
+  const aad = buildAad(expectedAppId, parts.userKey, parts.version, expectedTokenType);
   let plaintext: Uint8Array;
   try {
     plaintext = await aeadImpl.open({
@@ -152,12 +174,21 @@ async function decryptOrThrow(
     throw new Error('SEALED_TOKEN_TAMPERED');
   }
   const parsed = JSON.parse(toUtf8(plaintext)) as SealedPayload;
-  if (parsed.appId !== expectedAppId || parsed.tossUserKey !== parts.userKey) {
+  if (
+    parsed.appId !== expectedAppId ||
+    parsed.tossUserKey !== parts.userKey ||
+    parsed.tokenType !== expectedTokenType
+  ) {
     throw new Error('SEALED_TOKEN_TAMPERED');
   }
   return parsed;
 }
 
-export function buildAad(appId: string, tossUserKey: string, version: number): Uint8Array {
-  return fromUtf8(`${appId} ${tossUserKey} ${version}`);
+export function buildAad(
+  appId: string,
+  tossUserKey: string,
+  version: number,
+  tokenType: SealedTokenType,
+): Uint8Array {
+  return fromUtf8(`${appId} ${tossUserKey} ${version} ${tokenType}`);
 }

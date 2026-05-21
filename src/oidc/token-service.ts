@@ -86,20 +86,23 @@ async function finalize(
     appId: app.id,
     sealingKeyVersion: app.sealingKeyVersion,
   });
-  const sealCommon = {
-    sealingKey,
-    sealingKeyVersion: app.sealingKeyVersion,
-    payload: {
-      appId: app.id,
-      tossUserKey: String(me.userKey),
-      tossAt: ts.accessToken,
-      tossRt: ts.refreshToken,
-      tossAtExp,
-      issuedAt: now,
-    },
+  const payloadCommon = {
+    appId: app.id,
+    tossUserKey: String(me.userKey),
+    tossAt: ts.accessToken,
+    tossRt: ts.refreshToken,
+    tossAtExp,
+    issuedAt: now,
   };
-  const accessToken = await wrapSealedToken(sealCommon);
-  const refreshToken = await wrapSealedToken(sealCommon);
+  const sealCommon = { sealingKey, sealingKeyVersion: app.sealingKeyVersion };
+  const accessToken = await wrapSealedToken({
+    ...sealCommon,
+    payload: { ...payloadCommon, tokenType: 'access' },
+  });
+  const refreshToken = await wrapSealedToken({
+    ...sealCommon,
+    payload: { ...payloadCommon, tokenType: 'refresh' },
+  });
   const idToken = await mintIdToken({
     issuer: deps.issuer,
     ttlSeconds: deps.idTokenTtlSeconds,

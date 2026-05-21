@@ -208,8 +208,7 @@ export async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   const masterKeyProviderKind = (process.env.MASTER_KEY_PROVIDER ?? 'env').toLowerCase() as
     | 'env'
-    | 'file'
-    | 'gcpsm';
+    | 'file';
   const masterKeyDir = process.env.MASTER_KEY_DIR;
   const signingKeysRecord: Record<string, string> = Object.fromEntries(
     oidcConfig.signingKeys.map((s) => [s.kid, s.pem]),

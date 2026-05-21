@@ -62,7 +62,7 @@ DB row는 metadata만. 실제 key bytes는 `MasterKeyProvider`가 외부에서 f
 - `file` (`${MASTER_KEY_DIR}/v<version>.key`, perm 600)
 - `gcpsm` (`oidc-bridge-master-key-v<version>`) — GCP Secret Manager self-host 옵션, lazy import
 
-`MASTER_KEY_PROVIDER` env로 선택. 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 `cli master-key rotate` — old version retained until 모든 `apps.sealing_key_version`이 새로 migrate, lazy rewrap.
+`MASTER_KEY_PROVIDER` env로 선택. 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 아직 CLI 자동화 안 됨 — 수동으로 새 버전 key를 만든 뒤 `apps.sealing_key_version` row를 migrate (old version은 모두 옮길 때까지 유지, lazy rewrap). 절차는 `docs/SELF_HOSTING.md` §Backups 참조.
 
 ### `/oidc/token`이 foundational primitive
 
@@ -125,7 +125,7 @@ src/
   master-keys/  # provider, env-provider, file-provider, gcpsm-provider (lazy), cache (6h TTL)
   apps/         # admin REST: workspaces + apps + api_tokens, ownership state machine
   audit/        # audit_log writer
-cli/index.ts + cli/commands/{bootstrap,doctor,workspace-*,app-*,api-token-*,master-key-rotate}.ts
+cli/index.ts + cli/commands/{bootstrap,doctor,workspace,app,api-token,user}.ts
 ```
 
 Phase 0 + Phase 1 산출물(`storage/`, `master-keys/`)은 main에 머지됨. 그 외 디렉토리는 후속 phase에서 추가.

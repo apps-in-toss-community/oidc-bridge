@@ -14,17 +14,23 @@ import type { AppOwnershipStatus, AppRecord } from './types.js';
  * that drizzle-orm/d1/migrator reads from disk — not available in Workers or
  * test environments. We apply the same DDL as drizzle/sqlite/ inline via the
  * D1 API's batch() method.
+ *
+ * Every CREATE TABLE and CREATE [UNIQUE] INDEX uses IF NOT EXISTS so that
+ * runD1Migrations is idempotent — safe to call against an already-migrated
+ * database without throwing "table/index already exists". ALTER TABLE
+ * statements are not idempotent by nature; they are append-only migrations
+ * and must only run once (deploy-time guarantee, same as before).
  */
 const MIGRATION_DDL = [
   // 0000 — initial schema
-  `CREATE TABLE "users" (
+  `CREATE TABLE IF NOT EXISTS "users" (
     "id" text PRIMARY KEY NOT NULL,
     "email" text NOT NULL,
     "created_at" integer DEFAULT (unixepoch() * 1000) NOT NULL
   )`,
-  `CREATE UNIQUE INDEX "users_email_unique" ON "users" ("email")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "users_email_unique" ON "users" ("email")`,
 
-  `CREATE TABLE "api_tokens" (
+  `CREATE TABLE IF NOT EXISTS "api_tokens" (
     "id" text PRIMARY KEY NOT NULL,
     "user_id" text NOT NULL,
     "name" text NOT NULL,
@@ -34,19 +40,19 @@ const MIGRATION_DDL = [
     "last_used_at" integer,
     FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE cascade
   )`,
-  `CREATE UNIQUE INDEX "api_tokens_token_hash_unique" ON "api_tokens" ("token_hash")`,
-  `CREATE INDEX "api_tokens_user_id_idx" ON "api_tokens" ("user_id")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "api_tokens_token_hash_unique" ON "api_tokens" ("token_hash")`,
+  `CREATE INDEX IF NOT EXISTS "api_tokens_user_id_idx" ON "api_tokens" ("user_id")`,
 
-  `CREATE TABLE "workspaces" (
+  `CREATE TABLE IF NOT EXISTS "workspaces" (
     "id" text PRIMARY KEY NOT NULL,
     "owner_user_id" text NOT NULL,
     "name" text NOT NULL,
     "created_at" integer DEFAULT (unixepoch() * 1000) NOT NULL,
     FOREIGN KEY ("owner_user_id") REFERENCES "users"("id") ON DELETE cascade
   )`,
-  `CREATE INDEX "workspaces_owner_idx" ON "workspaces" ("owner_user_id")`,
+  `CREATE INDEX IF NOT EXISTS "workspaces_owner_idx" ON "workspaces" ("owner_user_id")`,
 
-  `CREATE TABLE "apps" (
+  `CREATE TABLE IF NOT EXISTS "apps" (
     "id" text PRIMARY KEY NOT NULL,
     "workspace_id" text NOT NULL,
     "app_id_toss" text NOT NULL,
@@ -65,11 +71,11 @@ const MIGRATION_DDL = [
     FOREIGN KEY ("workspace_id") REFERENCES "workspaces"("id") ON DELETE cascade,
     CONSTRAINT "apps_ownership_status_chk" CHECK("ownership_status" IN ('pending','verified','lapsed'))
   )`,
-  `CREATE UNIQUE INDEX "apps_client_id_unique" ON "apps" ("client_id")`,
-  `CREATE INDEX "apps_workspace_idx" ON "apps" ("workspace_id")`,
-  `CREATE UNIQUE INDEX "apps_workspace_app_id_toss_uq" ON "apps" ("workspace_id","app_id_toss")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "apps_client_id_unique" ON "apps" ("client_id")`,
+  `CREATE INDEX IF NOT EXISTS "apps_workspace_idx" ON "apps" ("workspace_id")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "apps_workspace_app_id_toss_uq" ON "apps" ("workspace_id","app_id_toss")`,
 
-  `CREATE TABLE "audit_log" (
+  `CREATE TABLE IF NOT EXISTS "audit_log" (
     "id" text PRIMARY KEY NOT NULL,
     "ts" integer DEFAULT (unixepoch() * 1000) NOT NULL,
     "actor" text NOT NULL,
@@ -78,25 +84,25 @@ const MIGRATION_DDL = [
     "details_json" text DEFAULT '{}' NOT NULL
   )`,
   // Note: D1/workerd does not support DESC in expression indexes; use plain index.
-  `CREATE INDEX "audit_log_ts_idx" ON "audit_log" ("ts")`,
+  `CREATE INDEX IF NOT EXISTS "audit_log_ts_idx" ON "audit_log" ("ts")`,
 
-  `CREATE TABLE "master_keys" (
+  `CREATE TABLE IF NOT EXISTS "master_keys" (
     "id" text PRIMARY KEY NOT NULL,
     "version" integer NOT NULL,
     "created_at" integer DEFAULT (unixepoch() * 1000) NOT NULL,
     "retired_at" integer,
     "provider_ref" text
   )`,
-  `CREATE UNIQUE INDEX "master_keys_version_unique" ON "master_keys" ("version")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "master_keys_version_unique" ON "master_keys" ("version")`,
 
-  `CREATE TABLE "user_sessions" (
+  `CREATE TABLE IF NOT EXISTS "user_sessions" (
     "id" text PRIMARY KEY NOT NULL,
     "user_id" text NOT NULL,
     "expires_at" integer NOT NULL,
     "created_at" integer DEFAULT (unixepoch() * 1000) NOT NULL,
     FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE cascade
   )`,
-  `CREATE INDEX "user_sessions_user_idx" ON "user_sessions" ("user_id")`,
+  `CREATE INDEX IF NOT EXISTS "user_sessions_user_idx" ON "user_sessions" ("user_id")`,
 
   // 0001 — add password_hash column
   `ALTER TABLE "users" ADD COLUMN "password_hash" text`,
@@ -106,8 +112,20 @@ export async function runD1Migrations(db: D1Database): Promise<void> {
   // D1 does not support multi-statement batches via the REST API for DDL
   // directly, but workerd (used by miniflare) executes them sequentially.
   // We run each statement independently to maximise compatibility.
+  //
+  // CREATE TABLE / INDEX statements use IF NOT EXISTS and are inherently
+  // idempotent. ALTER TABLE ADD COLUMN has no IF NOT EXISTS syntax in SQLite;
+  // we swallow "duplicate column" errors so the function is safe to call
+  // against an already-migrated database.
   for (const stmt of MIGRATION_DDL) {
-    await db.prepare(stmt).run();
+    try {
+      await db.prepare(stmt).run();
+    } catch (err) {
+      const isAlterAddColumn = /^\s*ALTER\s+TABLE\b/i.test(stmt);
+      const isDuplicateColumn = err instanceof Error && /duplicate column/i.test(err.message);
+      if (isAlterAddColumn && isDuplicateColumn) continue;
+      throw err;
+    }
   }
 }
 

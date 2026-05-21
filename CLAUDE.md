@@ -62,7 +62,7 @@ DB row는 metadata만. 실제 key bytes는 `MasterKeyProvider`가 외부에서 f
 - `file` (`${MASTER_KEY_DIR}/v<version>.key`, perm 600)
 - `gcpsm` (`oidc-bridge-master-key-v<version>`) — GCP Secret Manager self-host 옵션, lazy import
 
-`MASTER_KEY_PROVIDER` env로 선택. 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 아직 CLI 자동화 안 됨 — 수동으로 새 버전 key를 만든 뒤 `apps.sealing_key_version` row를 migrate (old version은 모두 옮길 때까지 유지, lazy rewrap). 절차는 `docs/SELF_HOSTING.md` §Backups 참조.
+`MASTER_KEY_PROVIDER` env로 선택. 6h TTL in-memory cache. Per-app sealing key는 master key + `app_id`로 HKDF 유도 (`info=ait/seal/v1`). Rotation은 아직 CLI 자동화 안 됨 — 수동으로 새 버전 key를 만든 뒤 `apps.sealing_key_version` row를 migrate (old version은 모두 옮길 때까지 유지, lazy rewrap). 절차는 `docs/SELF_HOSTING.md` "Backups & disaster recovery" 섹션 참조.
 
 ### `/oidc/token`이 foundational primitive
 
@@ -78,7 +78,7 @@ Runtime-agnostic + 작은 표면 + 빠른 cold-start + CORS/rate-limit/JWT verif
 
 - **OIDC**: `GET /.well-known/openid-configuration` (`authorization_endpoint`/`response_types_supported`는 의도적 omit — Toss SDK가 OIDC redirect 미지원), `GET /.well-known/jwks.json`, `POST /oidc/token` (`authorization_code`/`refresh_token`. **public client**는 `Origin` 검증으로 인증, **confidential client**는 `client_secret_basic` / `client_secret_post`), `GET /oidc/userinfo` (Bearer → mTLS `/login-me`), `POST /oidc/revoke` (RFC 7009, 항상 200), `GET /oidc/raw-tokens` (opt-in, raw Toss tokens 노출).
 - **Admin**: `POST/GET/PATCH/DELETE /admin/workspaces`, `/admin/apps`, `/admin/api-tokens`. `API_TOKEN` bearer로 보호. mTLS material은 GET 응답에서 `***`로 마스킹.
-- **CLI**: 번들로 동봉. Admin REST의 thin client + self-host `bootstrap`(offline) + `doctor` 진단.
+- **CLI**: 번들로 동봉. Admin REST의 thin client + self-host `bootstrap`(offline) + `doctor` 진단 + `user`(offline 사용자 관리: `user create` / `user set-password`).
 - **Status**: `GET /status` (Phase 8) HTML 페이지 + `GET /healthz` liveness.
 
 ## Toss adapter
@@ -128,7 +128,7 @@ src/
 cli/index.ts + cli/commands/{bootstrap,doctor,workspace,app,api-token,user}.ts
 ```
 
-Phase 0 + Phase 1 산출물(`storage/`, `master-keys/`)은 main에 머지됨. 그 외 디렉토리는 후속 phase에서 추가.
+위 디렉토리는 모두 main에 머지된 상태다 (phase별 진행 현황은 아래 milestone 표 참조).
 
 ## Secrets 처리
 

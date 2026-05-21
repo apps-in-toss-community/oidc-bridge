@@ -42,6 +42,7 @@ async function makeToken(app: FakeAppRow, userKey = '42'): Promise<string> {
       tossRt: 'TOSS_RT_OPAQUE_FIXTURE',
       tossAtExp: 1735689600,
       issuedAt: 1735686000,
+      tokenType: 'refresh',
     },
   });
 }
@@ -172,6 +173,7 @@ describe('POST /oidc/revoke', () => {
         tossRt: 'x',
         tossAtExp: 1,
         issuedAt: 1,
+        tokenType: 'refresh',
       },
     });
     const res = await h.request('/oidc/revoke', {

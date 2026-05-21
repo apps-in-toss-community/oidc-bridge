@@ -5,6 +5,7 @@ import type { Storage } from '../storage/interface.js';
 import { resolveClientAuth } from './client-auth.js';
 import { toOAuthError } from './errors.js';
 import { originIsAllowed } from './origin-check.js';
+import type { RevocationStore } from './revocation-store.js';
 import { peekSealedTokenVersion, unwrapSealedToken } from './sealed-token.js';
 import { tokenBody } from './token-schemas.js';
 import type { TokenService } from './token-service.js';
@@ -16,6 +17,7 @@ export interface TokenRouteOpts {
     appId: string;
     sealingKeyVersion: number;
   }) => Promise<Uint8Array>;
+  revocationStore: RevocationStore;
 }
 
 export function tokenRoute(opts: TokenRouteOpts) {
@@ -116,6 +118,11 @@ export function tokenRoute(opts: TokenRouteOpts) {
         return c.json(e.body, e.status as never);
       }
 
+      if (await opts.revocationStore.isRevoked({ appId: appRow.id, token: body.refresh_token })) {
+        const e = toOAuthError({ code: 'invalid_grant', description: 'refresh_token revoked' });
+        return c.json(e.body, e.status as never);
+      }
+
       let unwrapped: Awaited<ReturnType<typeof unwrapSealedToken>>;
       try {
         const sealingKey = await opts.resolveAppSealingKey({
@@ -126,6 +133,7 @@ export function tokenRoute(opts: TokenRouteOpts) {
           token: body.refresh_token,
           resolveKey: () => sealingKey,
           expectedAppId: appRow.id,
+          expectedTokenType: 'refresh',
         });
       } catch {
         const e = toOAuthError({ code: 'invalid_grant', description: 'refresh_token rejected' });

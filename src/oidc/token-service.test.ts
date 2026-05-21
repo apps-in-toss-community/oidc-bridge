@@ -39,9 +39,30 @@ describe('tokenService.authorizationCode', () => {
       token: out.access_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'app_abc',
+      expectedTokenType: 'access',
     });
     expect(at.tossAt).toBe('TOSS_AT_OPAQUE_FIXTURE');
     expect(at.tossRt).toBe('TOSS_RT_OPAQUE_FIXTURE');
+    expect(at.tokenType).toBe('access');
+
+    // Token-type confusion guard: the access token must NOT unwrap as a refresh
+    // token (the type is bound into the AAD), and vice versa.
+    await expect(
+      unwrapSealedToken({
+        token: out.access_token,
+        resolveKey: () => sealingKey,
+        expectedAppId: 'app_abc',
+        expectedTokenType: 'refresh',
+      }),
+    ).rejects.toThrow(/SEALED_TOKEN_TAMPERED/);
+    await expect(
+      unwrapSealedToken({
+        token: out.refresh_token,
+        resolveKey: () => sealingKey,
+        expectedAppId: 'app_abc',
+        expectedTokenType: 'access',
+      }),
+    ).rejects.toThrow(/SEALED_TOKEN_TAMPERED/);
   });
 
   it('propagates Toss invalid_grant', async () => {
@@ -89,6 +110,7 @@ describe('tokenService.refresh', () => {
       token: first.refresh_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'a',
+      expectedTokenType: 'refresh',
     });
     const second = await service.refresh({
       app: { id: 'a', clientId: 'a', sealingKeyVersion: 1 },
@@ -98,6 +120,7 @@ describe('tokenService.refresh', () => {
       token: second.access_token,
       resolveKey: () => sealingKey,
       expectedAppId: 'a',
+      expectedTokenType: 'access',
     });
     expect(secondUnwrapped.tossAt).toBe('TOSS_AT_OPAQUE_REFRESHED');
     expect(secondUnwrapped.tossRt).toBe('TOSS_RT_OPAQUE_REFRESHED');

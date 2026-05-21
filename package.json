@@ -1,7 +1,7 @@
 {
   "name": "@ait-co/oidc-bridge",
   "version": "0.0.0",
-  "description": "OIDC + Firebase Custom Token bridge for Toss login — community-run with public rate-limited instance, plus self-host Docker image",
+  "description": "OIDC adapter that bridges Toss login into BaaS platforms (Supabase, Firebase, Auth0, Keycloak) — community-run with a public rate-limited instance, plus a self-host Docker image",
   "type": "module",
   "private": true,
   "engines": {

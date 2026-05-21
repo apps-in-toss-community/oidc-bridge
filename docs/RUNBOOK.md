@@ -4,9 +4,9 @@ Operational procedures for self-host deployments of the bridge.
 Each section is self-contained — read top-to-bottom for the procedure you're
 running.
 
-> The community public instance at `oidc-bridge.aitc.dev` runs on Cloudflare
-> Workers from a separate repo (`oidc-bridge-cloud`); its operational
-> procedures are not covered here.
+The community public instance at `oidc-bridge.aitc.dev` runs on Cloudflare
+Workers from a separate repo (`oidc-bridge-cloud`); its operational procedures
+are not covered here.
 
 ## First-time setup
 

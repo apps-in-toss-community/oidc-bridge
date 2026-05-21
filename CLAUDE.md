@@ -37,7 +37,7 @@
 ### 운영 모델
 
 - **공용 인스턴스** (`oidc-bridge.aitc.dev`, SLA 없음) — 별도 repo `oidc-bridge-cloud`의 Cloudflare Workers (Workers for Platforms 디스패치 + per-tenant Worker). 본 repo의 Node 서버 코드를 그 곳에서도 ports/adapters로 재사용한다. 운영 절차는 그쪽 repo가 source of truth.
-- **Self-host** — 본 repo의 Docker 이미지 + `docker-compose.yml`. `RATE_LIMIT_ENABLED=false` 기본. Spark 플랜에서 Firebase Custom Token을 원하면 self-host가 유일한 길.
+- **Self-host** — 본 repo의 Docker 이미지 + `docker-compose.yml`. rate limit은 기본 ON(`RATE_LIMIT_ENABLED`을 명시적으로 `false`로 설정해야 끈다 — `src/config.ts`). Spark 플랜에서 Firebase Custom Token을 원하면 self-host가 유일한 길(`/firebase-token`은 M2, 아직 미구현).
 
 보안이 민감한 production 사용자는 self-host 권장.
 
@@ -159,7 +159,7 @@ mTLS cert + key (PEM)는 `apps` 테이블 컬럼에 per-app sealing key로 봉�
 
 ## 기술 스택 (repo-specific)
 
-TypeScript ESM strict / **Hono** (+ `@hono/node-server` for Node entry) / **Drizzle ORM** + **drizzle-kit** (Postgres + SQLite + D1, hand-mirrored schemas) / **`pg`** (node-postgres) / **better-sqlite3** (sync, native binding — pnpm `onlyBuiltDependencies`) / **`drizzle-orm/d1`** + **miniflare** (D1 driver + in-memory test harness) / **`@cloudflare/workers-types`** (type-only, dev) / **jose** (ID token sign+verify, JWKS) / **bcryptjs** (client_secret hash) / **@google-cloud/secret-manager** (lazy) / **undici** (Node mTLS dispatcher, kept behind `MtlsClient` Node adapter) / **commander** (CLI) / **pino** + **pino-pretty** (logging via `Logger` port; Workers entry uses JSON-line adapter) / **WebCrypto `crypto.subtle`** (AEAD, HKDF, digest — primary), **`node:crypto`** (AEAD/HKDF — Node adapter only, behind ports) / **tsdown** 빌드 / **vitest** 테스트.
+TypeScript ESM strict / **Hono** (+ `@hono/node-server` for Node entry) / **Drizzle ORM** + **drizzle-kit** (Postgres + SQLite + D1, hand-mirrored schemas) / **`pg`** (node-postgres) / **better-sqlite3** (sync, native binding — pnpm `onlyBuiltDependencies`) / **`drizzle-orm/d1`** + **miniflare** (D1 driver + in-memory test harness) / **`@cloudflare/workers-types`** (type-only, dev) / **jose** (ID token sign+verify, JWKS) / **bcryptjs** (client_secret hash) / **undici** (Node mTLS dispatcher, kept behind `MtlsClient` Node adapter) / **commander** (CLI) / **pino** + **pino-pretty** (logging via `Logger` port; Workers entry uses JSON-line adapter) / **WebCrypto `crypto.subtle`** (AEAD, HKDF, digest — primary), **`node:crypto`** (AEAD/HKDF — Node adapter only, behind ports) / **tsdown** 빌드 / **vitest** 테스트.
 
 ## 공통 스택
 
@@ -182,6 +182,7 @@ pnpm test                 # vitest run (PG_TEST_URL 미설정 시 PG conformance
 pnpm lint                 # biome check .
 pnpm db:generate:pg       # drizzle-kit generate (pg)
 pnpm db:generate:sqlite   # drizzle-kit generate (sqlite)
+pnpm db:generate:d1       # drizzle-kit generate (d1)
 pnpm db:migrate:pg        # drizzle-kit migrate (pg)
 pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 ```
@@ -201,7 +202,7 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 
 ## 릴리즈 정책
 
-**서비스 repo** — main push = 이미지 발행. **Changesets 미사용**, Docker 이미지 tag가 버전 역할. main push → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>`. Self-host는 자기 인프라에서 `docker compose pull && up -d`(`RATE_LIMIT_ENABLED=false` 기본). 공용 인스턴스(`oidc-bridge.aitc.dev`)는 본 repo가 아니라 `oidc-bridge-cloud` (Cloudflare Workers)에서 따로 배포된다. 의미 있는 마일스톤은 GitHub Release 수동.
+**서비스 repo** — main push = 이미지 발행. **Changesets 미사용**, Docker 이미지 tag가 버전 역할. main push → `ghcr.io/apps-in-toss-community/oidc-bridge:latest` + `:sha-<sha>`. Self-host는 자기 인프라에서 `docker compose pull && up -d`(rate limit 기본 ON, `RATE_LIMIT_ENABLED=false`로 해제). 공용 인스턴스(`oidc-bridge.aitc.dev`)는 본 repo가 아니라 `oidc-bridge-cloud` (Cloudflare Workers)에서 따로 배포된다. 의미 있는 마일스톤은 GitHub Release 수동.
 
 ## 마일스톤 (Phase 0..11)
 

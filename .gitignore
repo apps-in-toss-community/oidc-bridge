@@ -16,3 +16,4 @@ coverage
 
 data/
 local/
+.codegraph/

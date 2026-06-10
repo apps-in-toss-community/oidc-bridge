@@ -13,7 +13,7 @@
 
 **톤 가이드** (방어적 disclaimer 금지): README 푸터에 한 줄로 1회만 명시 — ko `README.md`는 `커뮤니티 오픈소스 프로젝트입니다.`, en `README.en.md`는 `Community open-source project.`. "제휴 아님" 같은 방어적 표현 대신 "커뮤니티 오픈소스" 정체성만 자연스럽게. 헤더 직후의 `>` blockquote 박스, ⚠️ 아이콘, 굵은 글씨, `unofficial`/`비공식` 같은 강한 라벨은 쓰지 않는다. 한 파일 안에서 영/한 병기 금지(다중 언어는 ko/en 별도 파일로 분리). 운영 단서(공용 인스턴스 `oidc-bridge.aitc.dev`는 rate-limited, best-effort, SLA 없음, security-sensitive workloads는 self-host 권장)는 disclaimer에 묶지 않고 README의 "Self-host" 섹션에 운영 정보로 둔다.
 
-**README i18n**: `README.md`(한국어, GitHub default) + `README.en.md`(영어). 둘 다 상단 상호 link(`[한국어](./README.md)` / `[English](./README.en.md)`), 동등 정본 — 한 쪽 갱신 시 같은 PR에서 반대쪽도 갱신. 자세한 정책은 umbrella `CLAUDE.md` "i18n 정책" 섹션.
+**README i18n**: `README.md`(한국어, GitHub default) + `README.en.md`(영어). 둘 다 상단 상호 link(`[한국어](./README.md)` / `[English](./README.en.md)`), 동등 정본 — 한 쪽 갱신 시 같은 PR에서 반대쪽도 갱신. 자세한 정책은 umbrella [`CLAUDE.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/CLAUDE.md) "i18n 정책" 섹션.
 
 이슈/제안은 GitHub Issues로.
 
@@ -218,7 +218,7 @@ pnpm db:migrate:sqlite    # drizzle-kit migrate (sqlite)
 | 6 | Admin sessions | `user_sessions` + stub session-login (feature flag), CLI `user create` / `user set-password`. | ✅ main |
 | 7 | CLI bootstrap/doctor | `bootstrap` (offline), `doctor` 진단 (env/db/master-key/JWKS/optional Toss probe). TTY-aware reporter + `--json`. | ✅ main |
 | 8 | Status / rate-limit / observability | `/status` HTML, sliding-window rate limits, pino structured logs, request-id, optional OTel. | ✅ main |
-| 09c | Runtime abstraction (Workers-ready core) | `Aead`/`Kdf`/`Random`/`Digest`/`Logger`/`MtlsClient` ports; `Uint8Array` boundaries; D1 storage adapter; `runtime/node.ts` + `runtime/workers.ts` split. Workers serves `/healthz` + discovery; `/oidc/token` returns 501 until cloud Phase 12c. | ✅ main |
+| 09c | Runtime abstraction (Workers-ready core) | `Aead`/`Kdf`/`Random`/`Digest`/`Logger`/`MtlsClient` ports; `Uint8Array` boundaries; D1 storage adapter; `runtime/node.ts` + `runtime/workers.ts` split. Workers entry serves `/healthz` + discovery + JWKS; `/oidc/token` GA는 cloud Phase 12c에서 완료(cloud Worker가 처리). | ✅ main |
 
 Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19). 이후 phase는 phase별 단일 PR.
 
@@ -226,16 +226,14 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 
 09c 이후의 모든 cloud-side phase (`10c` 이상)는 **별도 private repo `oidc-bridge-cloud`**에서 진행된다. 본 repo의 phase matrix는 `09c`에서 정지 — 이 repo는 self-host용 코드 베이스 + cloud Worker가 ports/adapters로 재사용하는 vendor source 역할이다. cloud-side phase plan은 [`docs/superpowers/specs/2026-05-07-cloudflare-cloud-separation.md`](docs/superpowers/specs/2026-05-07-cloudflare-cloud-separation.md) §10이 source of truth.
 
-요약 (2026-05-08 기준):
-
 | Cloud Phase | 상태 | 위치 |
 |---|---|---|
 | 10c — repo scaffold | ✅ merged | oidc-bridge-cloud#1 |
 | 11c — tenant template + DNS cutover + Vultr decommission (옛 13c·14c 흡수) | ✅ merged | oidc-bridge-cloud#3–#10 + oidc-bridge#48 |
-| 12c — `MtlsClient` binding + `/oidc/token` GA | ⬜ in-flight | oidc-bridge-cloud (3-PR split) |
-| Rotation phase — state machine + admin UI | ⬜ planned | oidc-bridge-cloud |
+| 12c — `MtlsClient` binding + `/oidc/token` GA | ✅ merged | oidc-bridge-cloud#11–#13 |
+| 13c — shared Secrets Store + rotation FSM | ✅ merged | oidc-bridge-cloud#16–#38 |
 | Self-host phase — generic Docker | ⬜ deferred | oidc-bridge (본 repo) |
-| **M5 — sdk-example dog-food on cloud (launch gate)** | ⬜ planned, gates on 12c | sdk-example |
+| **M5 — sdk-example dog-food on cloud (launch gate)** | ⬜ planned | sdk-example |
 
 본 repo의 `oidc-bridge.aitc.dev` 공용 인스턴스 운영은 **2026-05-08부로 cloud repo로 완전 이관**되었다 — 본 repo의 Vultr SSH-deploy GHA는 [#48](https://github.com/apps-in-toss-community/oidc-bridge/pull/48)에서 제거됐고, `docker-compose.yml` + `Dockerfile`은 self-host 용도로만 보존된다. 본 repo에서 향후 작업 가능성: bug fix, security patch, self-host phase의 generic Docker 정비, vendor-source 업데이트 (cloud repo가 sha pin 갱신할 때 동기화).
 
@@ -260,7 +258,7 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 - **WebCrypto `seal`/`open` is async**, so `wrapSealedToken` / `unwrapSealedToken` and `encryptColumn` / `decryptColumn` are `async`. All callers `await`. Sealed `ait_*` tokens issued before this phase remain decryptable — the on-the-wire format is locked by golden vectors in `src/oidc/__fixtures__/sealed-token-golden.json` (and equivalent for `apps/encryption`). Cross-impl tests verify Node↔WebCrypto wire interop on the same byte stream.
 - **Storage has three drivers** sharing `runStorageConformance`: `pg`, `sqlite`, `d1`. D1 lacks `IF NOT EXISTS` on DDL (workerd SQLite quirk) and rejects DESC in expression indexes — use plain `CREATE` and ascending order in `schema.d1.ts`. miniflare 4 in-memory D1 powers the test suite; D1 migrations apply at deploy time, not per-request.
 - **`@cloudflare/workers-types` is type-only**, imported via `import type { D1Database, ... } from '@cloudflare/workers-types'`. Never use `/// <reference types="@cloudflare/workers-types" />` — it pollutes global lib for the whole project (e.g. tightens Node's `TextDecoder` constructor signature so non-Workers files fail to typecheck). `tsconfig.json` `types` array stays `["node"]`.
-- **`runtime/workers.ts` must not import `node:*`** and must read env from the Workers `env` parameter, never `process.env`. Production today still runs on Node via `runtime/node.ts`; the Workers entry compiles, serves `/healthz` + discovery + JWKS, and explicitly returns 501 for `POST /oidc/token` until Phase 12c lands the mTLS binding.
+- **`runtime/workers.ts` must not import `node:*`** and must read env from the Workers `env` parameter, never `process.env`. Production today still runs on Node via `runtime/node.ts`; the Workers entry (09c) compiles and serves `/healthz` + discovery + JWKS. `POST /oidc/token` GA는 cloud Phase 12c에서 완료 — cloud Worker(oidc-bridge-cloud#11–#13)가 mTLS binding을 처리한다.
 
 ### pnpm 10 + native modules
 

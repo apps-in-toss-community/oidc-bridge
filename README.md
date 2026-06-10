@@ -2,7 +2,7 @@
 
 **한국어** · [English](./README.en.md)
 
-> 토스 로그인을 BaaS 플랫폼(Supabase, Firebase, Auth0, Keycloak 등)으로 연결해주는 커뮤니티 OIDC 어댑터.
+토스 로그인을 BaaS 플랫폼(Supabase, Firebase, Auth0, Keycloak 등)으로 연결해주는 커뮤니티 OIDC 어댑터.
 
 ## 동작 방식
 

@@ -2,7 +2,7 @@
 
 [한국어](./README.md) · **English**
 
-> Community-run OIDC adapter that bridges **Toss login** into BaaS platforms (Supabase, Firebase, Auth0, Keycloak, …).
+Community-run OIDC adapter that bridges **Toss login** into BaaS platforms (Supabase, Firebase, Auth0, Keycloak, …).
 
 ## What it does
 

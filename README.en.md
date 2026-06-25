@@ -6,7 +6,7 @@ Community-run OIDC adapter that bridges **Toss login** into BaaS platforms (Supa
 
 ## What it does
 
-A mini-app developer registers their app with the Bridge and gets a `client_id` + an `iss = https://oidc-bridge.aitc.dev` OIDC issuer URL. The mini-app calls `appLogin()` to get a Toss `authorizationCode`, exchanges it at `POST /oidc/token` for an OIDC `id_token`, and signs into Supabase via `signInWithIdToken`. No backend code required (zero-code mode).
+A mini-app developer registers their app with the Bridge and gets a `client_id` + an `iss = https://oidc-bridge.aitc.dev` OIDC issuer URL. The mini-app calls `appLogin()` to get a Toss `authorizationCode`; a thin consumer backend (e.g. a Supabase Edge Function) then relays it to the Bridge's `POST /oidc/token` to exchange for an OIDC `id_token`, and signs into Supabase via `signInWithIdToken`. "Zero-code" is from the **bridge-operator's perspective** — the Bridge handles all OIDC logic so the operator writes no custom code, but mini-app developers still need a thin consumer backend to relay and exchange the `authorizationCode` (clients must not call `/oidc/token` directly). For the full consumer-backend pattern and operator mTLS constraints, see the [oidc-bridge integration guide](https://docs.aitc.dev/guides/oidc-bridge).
 
 For Edge Function / Cloud Function operators that want server authority, the same `/oidc/token` endpoint accepts `client_secret` authentication (confidential-client mode).
 

@@ -6,7 +6,7 @@
 
 ## 동작 방식
 
-미니앱 개발자가 Bridge에 앱을 등록하면 `client_id`와 `iss = https://oidc-bridge.aitc.dev` OIDC 발급자 URL을 받습니다. 미니앱은 `appLogin()`을 호출해 토스 `authorizationCode`를 받고, `POST /oidc/token`에서 OIDC `id_token`으로 교환한 뒤 `signInWithIdToken`으로 Supabase에 로그인합니다. 별도 백엔드 코드가 필요 없습니다(zero-code 모드).
+미니앱 개발자가 Bridge에 앱을 등록하면 `client_id`와 `iss = https://oidc-bridge.aitc.dev` OIDC 발급자 URL을 받습니다. 미니앱은 `appLogin()`을 호출해 토스 `authorizationCode`를 받고, consumer 백엔드(예: Supabase Edge Function)가 이를 Bridge `POST /oidc/token`으로 중계해 OIDC `id_token`으로 교환한 뒤 `signInWithIdToken`으로 Supabase에 로그인합니다. "zero-code"는 **Bridge 운영자 관점**의 표현입니다 — Bridge가 모든 OIDC 로직을 처리하므로 운영자가 커스텀 코드를 작성하지 않는다는 의미이며, 미니앱 개발자는 `authorizationCode`를 중계·교환하는 얇은 consumer 백엔드가 여전히 필요합니다(클라이언트에서 `/oidc/token`을 직접 호출하지 않습니다). 자세한 consumer-backend 패턴·운영자 mTLS 제약은 [oidc-bridge 통합 가이드](https://docs.aitc.dev/guides/oidc-bridge)를 참고하세요.
 
 서버 권한이 필요한 Edge Function / Cloud Function 운영자는 동일한 `/oidc/token` 엔드포인트에서 `client_secret` 인증(confidential-client 모드)을 사용할 수 있습니다.
 

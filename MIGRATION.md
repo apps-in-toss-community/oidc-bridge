@@ -10,9 +10,12 @@ with the M0 `/verify` scaffold. Self-host operators of M0 must redeploy fresh.
 **Using the community public instance (`oidc-bridge.aitc.dev`)?**
 The public instance now runs on Cloudflare Workers, managed from the separate
 [`oidc-bridge-cloud`](https://github.com/apps-in-toss-community/oidc-bridge-cloud)
-repo. There is nothing to migrate or self-host — simply point your mini-app at
-`https://oidc-bridge.aitc.dev/oidc/token`. The steps below are for operators
-who run their own Docker-based self-hosted instance.
+repo. There is nothing to migrate or self-host — point your consumer backend at
+the tenant-scoped token endpoint `https://oidc-bridge.aitc.dev/t/<tenantId>/oidc/token`
+(the public instance is a tenant dispatcher, so the path is prefixed with your
+`/t/<tenantId>`; the bare root `/oidc/token` is the self-host mount form and 404s
+on the public instance). The steps below are for operators who run their own
+Docker-based self-hosted instance.
 
 ## What changed
 

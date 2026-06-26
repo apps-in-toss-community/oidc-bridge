@@ -8,7 +8,7 @@ spec only replaces the **deployment topology, mTLS storage model, and tenant
 isolation primitives**. The 12-phase implementation plan is paused at Phase 8
 (Phase 9 self-host artifacts is cancelled, see §10).
 
-Evidence: [`meta/cloudflare-cloud-separation-prototype.md`](https://github.com/apps-in-toss-community/umbrella/blob/main/meta/cloudflare-cloud-separation-prototype.md) (umbrella, private). All architectural assumptions in this spec were validated end-to-end against production Toss API endpoints (`apps-in-toss-api.toss.im`) using real Toss-issued mTLS certs through Cloudflare Workers for Platforms.
+Evidence: umbrella `meta/cloudflare-cloud-separation-prototype.md` (umbrella private maintainer-internal doc). All architectural assumptions in this spec were validated end-to-end against production Toss API endpoints (`apps-in-toss-api.toss.im`) using real Toss-issued mTLS certs through Cloudflare Workers for Platforms.
 
 ## 1. North star
 

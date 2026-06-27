@@ -619,9 +619,9 @@ For Edge Function / Cloud Function operators that want server authority, the sam
 
 Zero-code mode is under active implementation as of May 2026. See:
 
-- [Design spec](docs/superpowers/specs/2026-05-01-oidc-bridge-zero-code-mode-design.md) — full architecture, components, security model.
-- [Implementation index](docs/superpowers/plans/2026-05-01-zero-code-mode-index.md) — phase-by-phase plan.
-- [`MIGRATION.md`](./MIGRATION.md) — breaking change from M0.
+- [Design spec](../specs/2026-05-01-oidc-bridge-zero-code-mode-design.md) — full architecture, components, security model.
+- [Implementation index](./2026-05-01-zero-code-mode-index.md) — phase-by-phase plan.
+- [`MIGRATION.md`](../../../MIGRATION.md) — breaking change from M0.
 
 ## Self-host
 

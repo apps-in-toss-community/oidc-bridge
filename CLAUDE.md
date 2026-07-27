@@ -22,7 +22,7 @@
 기본적으로 **독립 서비스** — launch만 `sdk-example` dog-fooding에 묶인다.
 
 - **`sdk-example`** — bridge M5 launch gate가 여기로 묶인다. sdk-example의 `AuthPage`가 옛 `POST /verify`를 버리고 Supabase Edge Function (`supabase/functions/toss-login`)으로 `/oidc/token` → `signInWithIdToken` 경로를 만든다. 이 Edge Function이 README와 `agent-plugin` 템플릿의 canonical reference.
-- **`agent-plugin`** — `/ait new` auth 옵션이 이 bridge를 가리킨다.
+- **`agent-plugin`** — `/ait:new` auth 옵션이 이 bridge를 가리킨다.
 
 ## 프로젝트 개요
 

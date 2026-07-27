@@ -162,7 +162,7 @@ TypeScript ESM strict / **Hono** (+ `@hono/node-server` for Node entry) / **Driz
 
 ## 공통 스택
 
-Node 24 LTS, **pnpm 10.33.0** (`packageManager` 고정), TypeScript strict, **Biome** (lint + formatter — ESLint/Prettier 사용 안 함). Pre-commit hook은 source-controlled (`.githooks/pre-commit`)이며, contributor가 수동으로 활성화한다:
+Node 24 LTS, **pnpm 11.17.0** (`packageManager` 고정), TypeScript strict, **Biome** (lint + formatter — ESLint/Prettier 사용 안 함). Pre-commit hook은 source-controlled (`.githooks/pre-commit`)이며, contributor가 수동으로 활성화한다:
 
 ```bash
 git config core.hooksPath .githooks
@@ -260,9 +260,9 @@ Phase 0 + 1은 "zero-code mode" 큰 PR로 main에 한 번에 들어왔다 (#19).
 - **`@cloudflare/workers-types` is type-only**, imported via `import type { D1Database, ... } from '@cloudflare/workers-types'`. Never use `/// <reference types="@cloudflare/workers-types" />` — it pollutes global lib for the whole project (e.g. tightens Node's `TextDecoder` constructor signature so non-Workers files fail to typecheck). `tsconfig.json` `types` array stays `["node"]`.
 - **`runtime/workers.ts` must not import `node:*`** and must read env from the Workers `env` parameter, never `process.env`. Production today still runs on Node via `runtime/node.ts`; the Workers entry (09c) compiles and serves `/healthz` + discovery + JWKS. `POST /oidc/token` GA는 cloud Phase 12c에서 완료 — cloud Worker(oidc-bridge-cloud#11–#13)가 mTLS binding을 처리한다.
 
-### pnpm 10 + native modules
+### pnpm native module builds (allowBuilds)
 
-pnpm 10은 native module의 install/build script를 기본 차단(security). better-sqlite3는 alpine/musl prebuild를 ship 안 하므로 fallback compile이 필요한데, 그 compile 자체가 차단된다. 해결: `pnpm-workspace.yaml`의 `onlyBuiltDependencies: [better-sqlite3]`로 명시 허가. 새 native dep 추가 시 같은 배열에 추가. (pnpm 10.33부터 이 설정은 `package.json`의 `pnpm` 필드가 아니라 `pnpm-workspace.yaml`에서 읽힌다.)
+pnpm은 native module의 install/build script를 기본 차단(security). better-sqlite3는 alpine/musl prebuild를 ship 안 하므로 fallback compile이 필요한데, 그 compile 자체가 차단된다. 해결: `pnpm-workspace.yaml`의 `allowBuilds` 맵에서 `better-sqlite3: true`로 명시 허가. 새 native dep 추가 시 같은 맵에 `<name>: true`를 추가한다. (pnpm 11부터 `onlyBuiltDependencies`/`ignoredBuiltDependencies`는 더 이상 읽히지 않는다 — 선언 안 된 install script는 경고가 아니라 `ERR_PNPM_IGNORED_BUILDS`로 install 자체가 실패한다.)
 
 ### Alpine builder toolchain
 

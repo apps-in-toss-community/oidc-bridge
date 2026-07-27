@@ -12,7 +12,7 @@ this doc is the operator-facing summary.
 
 ## Prerequisites
 
-- Node 24 LTS, pnpm 10.33.0
+- Node 24 LTS, pnpm 11.17.0
 - An RSA-2048 private key in PKCS#8 PEM (used to sign id_tokens)
 - A Toss sandbox / production mTLS cert + key per app you'll register
   (issued from the Toss console, ~390-day validity)

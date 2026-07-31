@@ -153,7 +153,8 @@ afternoon, no external operator will either.
 - Vultr Seoul VPS deploy workflow (already shipped — GitHub Actions builds
   and pushes `ghcr.io/apps-in-toss-community/oidc-bridge:{latest,sha-<sha>}`,
   scps `docker-compose.yml` + `Caddyfile` to the VPS, then SSHes
-  `docker compose pull && up -d`; see [`docs/DEPLOY.md`](../../DEPLOY.md)) +
+  `docker compose pull && up -d`; see `docs/DEPLOY.md` — since removed along
+  with the Vultr deploy path, superseded by Cloudflare Workers) +
   DNS to `oidc-bridge.aitc.dev` (live) + first tenant provisioned via the
   bundled CLI against the public instance.
 - `sdk-example` switches its `AuthPage`'s OIDC bridge demo from the
